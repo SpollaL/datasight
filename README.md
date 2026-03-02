@@ -15,20 +15,25 @@ A terminal CSV/Parquet viewer with vim-style navigation, built with Rust and rat
 - Catppuccin Mocha color theme with zebra-striped rows and mode-aware status bar
 - Supports CSV and Parquet files
 
-## Requirements
+## Install
 
-- Rust 1.75 or higher
+### Pre-built binaries (recommended)
 
-## Build & Install
+Download the latest binary for your platform from the [GitHub Releases](https://github.com/spolla-l/iron-sight/releases) page.
+
+### Build from source
+
+Requires Rust 1.75 or higher.
 
 ```
-# Run directly
+cargo install --git https://github.com/spolla-l/iron-sight
+```
+
+Or clone and run locally:
+
+```
 cargo run -- <path-to-file.csv>
 cargo run -- <path-to-file.parquet>
-
-# Install
-cargo install --path .
-iron-sight <path-to-file.csv>
 ```
 
 ## Keybindings
