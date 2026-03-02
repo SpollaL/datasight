@@ -19,14 +19,14 @@ A terminal CSV/Parquet viewer with vim-style navigation, built with Rust and rat
 
 ### Pre-built binaries (recommended)
 
-Download the latest binary for your platform from the [GitHub Releases](https://github.com/spolla-l/iron-sight/releases) page.
+Download the latest binary for your platform from the [GitHub Releases](https://github.com/Spollal/iron-sight/releases) page.
 
 ### Build from source
 
 Requires Rust 1.75 or higher.
 
 ```
-cargo install --git https://github.com/spolla-l/iron-sight
+cargo install --git https://github.com/Spollal/iron-sight
 ```
 
 Or clone and run locally:
