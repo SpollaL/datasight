@@ -5,6 +5,8 @@ A terminal CSV/Parquet viewer with vim-style navigation, built with Rust and rat
 [![CI](https://github.com/SpollaL/iron-sight/actions/workflows/ci.yml/badge.svg)](https://github.com/SpollaL/iron-sight/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+![demo](.github/assets/demo.gif)
+
 ## Features
 
 - Vim-style navigation (`hjkl`, `g`/`G`, `PageUp`/`PageDown`)
