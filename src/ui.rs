@@ -369,7 +369,8 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
         vec![]
     };
     let max_label_len = x_labels.iter().map(|s| s.chars().count()).max().unwrap_or(0);
-    let label_height = max_label_len as u16;
+    // Cap so labels never consume more than 1/3 of the screen.
+    let label_height = (max_label_len as u16).min(full_area.height / 3);
 
     // Three-zone layout: chart | rotated-label strip | status bar
     let zones = Layout::default()
