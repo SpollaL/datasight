@@ -57,6 +57,10 @@ pub fn run_app(
                         app.build_columns_profile();
                         app.mode = Mode::ColumnsView;
                     }
+                    event::KeyCode::Char('u') if !app.df.is_empty() => {
+                        app.build_unique_values();
+                        app.mode = Mode::UniqueValues;
+                    }
                     _ => {}
                 },
                 Mode::Search => match key.code {
@@ -93,6 +97,35 @@ pub fn run_app(
                     }
                     event::KeyCode::Esc | event::KeyCode::Char('p') => app.mode = Mode::Normal,
                     event::KeyCode::Char('q') => app.should_quit = true,
+                    _ => {}
+                },
+                Mode::UniqueValues => match key.code {
+                    event::KeyCode::Esc => app.mode = Mode::Normal,
+                    event::KeyCode::Down | event::KeyCode::Char('j') => {
+                        app.unique_values_state.select_next()
+                    }
+                    event::KeyCode::Up | event::KeyCode::Char('k') => {
+                        app.unique_values_state.select_previous()
+                    }
+                    event::KeyCode::Backspace => {
+                        app.unique_values_query.pop();
+                        app.filter_unique_values();
+                    }
+                    event::KeyCode::Enter => {
+                        if let Some(idx) = app.unique_values_state.selected() {
+                            if let Some((value, _)) = app.unique_values_filtered.get(idx) {
+                                let filter = format!("= {}", value);
+                                let col = app.unique_values_col;
+                                app.filters.push((col, filter));
+                                app.update_filter();
+                            }
+                        }
+                        app.mode = Mode::Normal;
+                    }
+                    event::KeyCode::Char(c) => {
+                        app.unique_values_query.push(c);
+                        app.filter_unique_values();
+                    }
                     _ => {}
                 },
                 Mode::ColumnsView => match key.code {

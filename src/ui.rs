@@ -180,6 +180,10 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
             .style(Style::default().bg(c(m.surface0)).fg(c(m.text)));
         frame.render_widget(popup, area);
     }
+
+    if matches!(app.mode, Mode::UniqueValues) {
+        render_unique_values_popup(frame, app, m);
+    }
 }
 
 fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
@@ -206,6 +210,18 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                 app.plot_type_label()
             ),
             Style::default().bg(c(m.surface0)).fg(c(m.subtext1)),
+        ),
+        Mode::UniqueValues => (
+            format!(
+                " Unique values: {}  |  type to search  |  Enter filter  |  Esc close ",
+                app.headers
+                    .get(app.unique_values_col)
+                    .map_or("", |s| s.as_str())
+            ),
+            Style::default()
+                .bg(c(m.teal))
+                .fg(c(m.base))
+                .add_modifier(Modifier::BOLD),
         ),
         Mode::ColumnsView => (
             " Column Inspector  |  j/k navigate  |  Enter jump to column  |  Esc / i close "
@@ -384,6 +400,7 @@ fn help_text(m: &catppuccin::FlavorColors) -> Text<'static> {
         key("Esc / p", "Close chart"),
         Line::raw(""),
         section("Other"),
+        key("u", "Unique values popup (searchable, Enter to filter)"),
         key("i", "Column Inspector (schema + stats)"),
         key("_", "Autofit column width"),
         key("=", "Autofit all columns"),
@@ -392,6 +409,85 @@ fn help_text(m: &catppuccin::FlavorColors) -> Text<'static> {
         key("q", "Quit"),
         Line::raw(""),
     ])
+}
+
+fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorColors) {
+    let area = centered_rect(52, 70, frame.area());
+    frame.render_widget(Clear, area);
+
+    let col_name = app
+        .headers
+        .get(app.unique_values_col)
+        .map_or("", |s| s.as_str());
+    let title = format!(
+        " Unique: {} ({} shown) ",
+        col_name,
+        app.unique_values_filtered.len()
+    );
+
+    let outer = Block::default()
+        .title(title)
+        .title_style(Style::default().fg(c(m.teal)).add_modifier(Modifier::BOLD))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(c(m.teal)))
+        .style(Style::default().bg(c(m.base)));
+
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
+    let zones = Layout::default()
+        .direction(ratatui::layout::Direction::Vertical)
+        .constraints([Constraint::Length(2), Constraint::Min(1)])
+        .split(inner);
+
+    // Search field
+    let search_text = format!(" Search: {}_ ", app.unique_values_query);
+    frame.render_widget(
+        Paragraph::new(search_text).style(Style::default().bg(c(m.surface0)).fg(c(m.text))),
+        zones[0],
+    );
+
+    // Values table
+    let header = Row::new([
+        Cell::from("Value").style(
+            Style::default()
+                .fg(c(m.lavender))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Count").style(
+            Style::default()
+                .fg(c(m.lavender))
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])
+    .style(Style::default().bg(c(m.surface0)))
+    .bottom_margin(1);
+
+    let rows: Vec<Row> = app
+        .unique_values_filtered
+        .iter()
+        .enumerate()
+        .map(|(i, (val, count))| {
+            let bg = if i % 2 == 0 { c(m.base) } else { c(m.mantle) };
+            Row::new([
+                Cell::from(val.clone()).style(Style::default().fg(c(m.text))),
+                Cell::from(count.to_string()).style(Style::default().fg(c(m.subtext1))),
+            ])
+            .style(Style::default().bg(bg))
+        })
+        .collect();
+
+    let table = Table::new(rows, [Constraint::Min(10), Constraint::Length(8)])
+        .header(header)
+        .row_highlight_style(
+            Style::default()
+                .bg(c(m.teal))
+                .fg(c(m.base))
+                .add_modifier(Modifier::BOLD),
+        );
+
+    frame.render_stateful_widget(table, zones[1], &mut app.unique_values_state);
 }
 
 fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorColors) {

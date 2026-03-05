@@ -39,6 +39,7 @@ pub enum Mode {
     PlotPickX,
     Plot,
     ColumnsView,
+    UniqueValues,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -101,6 +102,11 @@ pub struct App {
     pub columns_profile: Vec<ColumnProfile>,
     pub columns_view_state: TableState,
     pub view_offset: usize,
+    pub unique_values: Vec<(String, usize)>,
+    pub unique_values_filtered: Vec<(String, usize)>,
+    pub unique_values_query: String,
+    pub unique_values_state: TableState,
+    pub unique_values_col: usize,
 }
 
 /// Build a polars filter expression for a column and query string.
@@ -134,6 +140,17 @@ fn build_filter_expr(col_name: &str, query: &str) -> Expr {
                 "<" => col(col_name).lt(lit(value)),
                 _ => col(col_name).eq(lit(value)),
             };
+        }
+        // Non-numeric value with = / != : exact string match.
+        if op == "=" {
+            return col(col_name)
+                .cast(DataType::String)
+                .eq(lit(rest.to_string()));
+        }
+        if op == "!=" {
+            return col(col_name)
+                .cast(DataType::String)
+                .neq(lit(rest.to_string()));
         }
     }
 
@@ -181,6 +198,11 @@ impl App {
             columns_profile: Vec::new(),
             columns_view_state: TableState::default(),
             view_offset: 0,
+            unique_values: Vec::new(),
+            unique_values_filtered: Vec::new(),
+            unique_values_query: String::new(),
+            unique_values_state: TableState::default(),
+            unique_values_col: 0,
         };
         if !app.df.is_empty() {
             app.state.select(Some(0));
@@ -471,6 +493,59 @@ impl App {
             self.state.select(Some(0));
             self.state.select_column(Some(0));
         }
+    }
+
+    pub fn build_unique_values(&mut self) {
+        const MAX_UNIQUE: usize = 500;
+        let col_idx = self.state.selected_column().unwrap_or(0);
+        self.unique_values_col = col_idx;
+        self.unique_values_query = String::new();
+
+        let counts: Vec<(String, usize)> = (|| {
+            let s = self
+                .view
+                .column(&self.headers[col_idx])
+                .ok()?
+                .as_series()?
+                .clone();
+            let str_s = s.cast(&DataType::String).ok()?;
+            let ca = str_s.str().ok()?.clone();
+            let mut map: HashMap<String, usize> = HashMap::new();
+            for v in ca.into_iter() {
+                *map.entry(v.unwrap_or("null").to_string()).or_insert(0) += 1;
+            }
+            let mut pairs: Vec<(String, usize)> = map.into_iter().collect();
+            pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            pairs.truncate(MAX_UNIQUE);
+            Some(pairs)
+        })()
+        .unwrap_or_default();
+
+        self.unique_values = counts;
+        self.unique_values_filtered = self.unique_values.clone();
+        self.unique_values_state = TableState::default();
+        if !self.unique_values_filtered.is_empty() {
+            self.unique_values_state.select(Some(0));
+        }
+    }
+
+    pub fn filter_unique_values(&mut self) {
+        let q = self.unique_values_query.to_lowercase();
+        self.unique_values_filtered = if q.is_empty() {
+            self.unique_values.clone()
+        } else {
+            self.unique_values
+                .iter()
+                .filter(|(v, _)| v.to_lowercase().contains(&q))
+                .cloned()
+                .collect()
+        };
+        self.unique_values_state
+            .select(if self.unique_values_filtered.is_empty() {
+                None
+            } else {
+                Some(0)
+            });
     }
 
     pub fn build_columns_profile(&mut self) {
