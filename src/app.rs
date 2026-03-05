@@ -783,6 +783,72 @@ mod groupby_tests {
 }
 
 #[cfg(test)]
+mod filter_expr_tests {
+    use super::*;
+
+    fn make_app() -> App {
+        let df = df! {
+            "name" => ["Alice", "Bob", "Charlie"],
+            "age"  => [18i64, 25, 30],
+        }
+        .unwrap();
+        App::new(df, "test.csv".to_string())
+    }
+
+    fn apply(app: &mut App, col_idx: usize, query: &str) -> usize {
+        app.filters = vec![(col_idx, query.to_string())];
+        app.update_filter();
+        app.view.height()
+    }
+
+    #[test]
+    fn test_gt() {
+        assert_eq!(apply(&mut make_app(), 1, "> 18"), 2); // Bob, Charlie
+    }
+
+    #[test]
+    fn test_lt() {
+        assert_eq!(apply(&mut make_app(), 1, "< 25"), 1); // Alice
+    }
+
+    #[test]
+    fn test_gte() {
+        assert_eq!(apply(&mut make_app(), 1, ">= 25"), 2); // Bob, Charlie
+    }
+
+    #[test]
+    fn test_lte() {
+        assert_eq!(apply(&mut make_app(), 1, "<= 25"), 2); // Alice, Bob
+    }
+
+    #[test]
+    fn test_eq() {
+        assert_eq!(apply(&mut make_app(), 1, "= 25"), 1); // Bob
+    }
+
+    #[test]
+    fn test_neq() {
+        assert_eq!(apply(&mut make_app(), 1, "!= 25"), 2); // Alice, Charlie
+    }
+
+    #[test]
+    fn test_fallback_to_substring_for_strings() {
+        assert_eq!(apply(&mut make_app(), 0, "li"), 2); // Alice, Charlie
+    }
+
+    #[test]
+    fn test_non_numeric_value_falls_back_to_substring() {
+        // "> abc" can't parse as f64, so falls back to substring — no match
+        assert_eq!(apply(&mut make_app(), 1, "> abc"), 0);
+    }
+
+    #[test]
+    fn test_spaces_around_operator_and_value() {
+        assert_eq!(apply(&mut make_app(), 1, "  >  18  "), 2);
+    }
+}
+
+#[cfg(test)]
 mod plot_tests {
     use super::*;
 
