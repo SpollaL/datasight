@@ -14,7 +14,7 @@ All notable changes to this project will be documented in this file.
 ### Performance
 - Table rendering is now O(viewport height) instead of O(total rows) — large files no longer freeze the UI
 
-## [0.1.0] - 2025-03-02
+## [0.1.0] - 2026-03-02
 
 ### Added
 - Initial release
