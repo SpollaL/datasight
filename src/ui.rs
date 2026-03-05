@@ -195,7 +195,7 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
         }
         Mode::Plot => (
             format!(
-                " {} chart  |  t toggle line/bar  |  Esc / p to close ",
+                " {} chart  |  t cycle line/bar/histogram  |  Esc / p to close ",
                 app.plot_type_label()
             ),
             Style::default().bg(c(m.surface0)).fg(c(m.subtext1)),
@@ -475,6 +475,130 @@ fn profile_row<'a>(p: &'a ColumnProfile, idx: usize, m: &catppuccin::FlavorColor
     .style(Style::default().bg(bg))
 }
 
+fn compute_histogram(app: &App, y_idx: usize) -> Vec<(f64, f64)> {
+    let col = match app.view.column(&app.headers[y_idx]) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    let y_f64 = match series_to_f64(col) {
+        Some(s) => s,
+        None => return vec![],
+    };
+    let values: Vec<f64> = y_f64
+        .f64()
+        .map(|ca| ca.into_iter().flatten().collect())
+        .unwrap_or_default();
+    if values.is_empty() {
+        return vec![];
+    }
+    let n = values.len();
+    // Sturges' rule, clamped to a sensible range.
+    let n_bins = ((n as f64).log2().ceil() as usize + 1).clamp(5, 50);
+    let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    if (max - min).abs() < f64::EPSILON {
+        return vec![(min, n as f64)];
+    }
+    let bin_w = (max - min) / n_bins as f64;
+    let mut counts = vec![0u64; n_bins];
+    for v in &values {
+        let bin = ((v - min) / bin_w) as usize;
+        counts[bin.min(n_bins - 1)] += 1;
+    }
+    counts
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| (min + (i as f64 + 0.5) * bin_w, c as f64))
+        .collect()
+}
+
+fn render_histogram(
+    frame: &mut Frame,
+    app: &App,
+    m: &catppuccin::FlavorColors,
+    y_idx: usize,
+    full_area: Rect,
+) {
+    let zones = Layout::default()
+        .direction(ratatui::layout::Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(full_area);
+    let chart_area = zones[0];
+    let bar_area = zones[1];
+
+    let bar_text = format!(
+        " Histogram chart  |  t cycle line/bar/histogram  |  Esc / p to close "
+    );
+    frame.render_widget(
+        Paragraph::new(bar_text).style(Style::default().bg(c(m.surface0)).fg(c(m.subtext1))),
+        bar_area,
+    );
+
+    let data = compute_histogram(app, y_idx);
+    if data.is_empty() {
+        let msg = Paragraph::new(
+            " No data to plot. Column must be numeric (int or float). ",
+        )
+        .block(
+            Block::default()
+                .title(" Plot Error ")
+                .title_style(Style::default().fg(c(m.red)).add_modifier(Modifier::BOLD))
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(c(m.red))),
+        )
+        .style(Style::default().bg(c(m.base)).fg(c(m.text)));
+        frame.render_widget(msg, chart_area);
+        return;
+    }
+
+    let x_min = data.first().map(|p| p.0).unwrap_or(0.0);
+    let x_max = data.last().map(|p| p.0).unwrap_or(1.0);
+    let y_max = data.iter().map(|p| p.1).fold(0.0f64, f64::max);
+    let y_pad = y_max * Y_AXIS_PADDING;
+
+    // Three evenly-spaced X labels showing the data range.
+    let x_mid = (x_min + x_max) / 2.0;
+    let x_labels = vec![
+        ratatui::text::Span::raw(format!("{:.2}", x_min)),
+        ratatui::text::Span::raw(format!("{:.2}", x_mid)),
+        ratatui::text::Span::raw(format!("{:.2}", x_max)),
+    ];
+
+    let dataset = Dataset::default()
+        .name(app.headers[y_idx].as_str())
+        .marker(symbols::Marker::Braille)
+        .graph_type(GraphType::Bar)
+        .style(Style::default().fg(c(m.mauve)))
+        .data(&data);
+
+    let chart = Chart::new(vec![dataset])
+        .block(
+            Block::default()
+                .title(format!(" Distribution of {} ", app.headers[y_idx]))
+                .title_style(Style::default().fg(c(m.mauve)).add_modifier(Modifier::BOLD))
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(c(m.overlay0)))
+                .style(Style::default().bg(c(m.base))),
+        )
+        .x_axis(
+            Axis::default()
+                .title(app.headers[y_idx].as_str())
+                .style(Style::default().fg(c(m.subtext1)))
+                .labels(x_labels)
+                .bounds([x_min, x_max]),
+        )
+        .y_axis(
+            Axis::default()
+                .title("Count")
+                .style(Style::default().fg(c(m.subtext1)))
+                .bounds([0.0, y_max + y_pad]),
+        );
+
+    frame.render_widget(chart, chart_area);
+}
+
 fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     let full_area = frame.area();
     frame.render_widget(Clear, full_area);
@@ -483,6 +607,11 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
         (Some(x), Some(y)) => (x, y),
         _ => return,
     };
+
+    if matches!(app.plot_type, PlotType::Histogram) {
+        render_histogram(frame, app, m, y_idx, full_area);
+        return;
+    }
 
     let (data, x_is_categorical) = extract_plot_data(app, x_idx, y_idx);
 
@@ -510,7 +639,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     let bar_area = zones[2];
 
     let bar_text = format!(
-        " {} chart  |  t toggle line/bar  |  Esc / p to close ",
+        " {} chart  |  t cycle line/bar/histogram  |  Esc / p to close ",
         app.plot_type_label()
     );
     frame.render_widget(
@@ -546,7 +675,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
         .marker(symbols::Marker::Braille)
         .graph_type(match app.plot_type {
             PlotType::Line => GraphType::Line,
-            PlotType::Bar => GraphType::Bar,
+            _ => GraphType::Bar,
         })
         .style(Style::default().fg(c(m.blue)))
         .data(&data);

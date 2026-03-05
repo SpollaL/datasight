@@ -87,7 +87,8 @@ pub fn run_app(
                     event::KeyCode::Char('t') => {
                         app.plot_type = match app.plot_type {
                             PlotType::Line => PlotType::Bar,
-                            PlotType::Bar => PlotType::Line,
+                            PlotType::Bar => PlotType::Histogram,
+                            PlotType::Histogram => PlotType::Line,
                         };
                     }
                     event::KeyCode::Esc | event::KeyCode::Char('p') => {

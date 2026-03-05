@@ -45,6 +45,7 @@ pub enum Mode {
 pub enum PlotType {
     Line,
     Bar,
+    Histogram,
 }
 
 #[derive(Debug)]
@@ -468,6 +469,7 @@ impl App {
         match self.plot_type {
             PlotType::Line => "Line",
             PlotType::Bar => "Bar",
+            PlotType::Histogram => "Histogram",
         }
     }
 
