@@ -29,6 +29,28 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
         return;
     }
 
+    let chunks = Layout::default()
+        .direction(ratatui::layout::Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(frame.area());
+
+    // 2 borders + 1 header row + 1 header bottom-margin = 4 rows of overhead.
+    let page_h = (chunks[0].height.saturating_sub(4)) as usize;
+    let total_rows = app.view.height();
+    let selected = app.state.selected().unwrap_or(0);
+
+    // Scroll the viewport to keep `selected` visible.
+    if selected < app.view_offset {
+        app.view_offset = selected;
+    } else if page_h > 0 && selected >= app.view_offset + page_h {
+        app.view_offset = selected.saturating_sub(page_h - 1);
+    }
+    // Don't let the offset run past the last page.
+    app.view_offset = app.view_offset.min(total_rows.saturating_sub(page_h.max(1)));
+
+    let slice_len = page_h.min(total_rows.saturating_sub(app.view_offset));
+    let visible_view = app.view.slice(app.view_offset as i64, slice_len);
+
     let header_cells = Row::new((0..app.headers.len()).map(|i| {
         Cell::from(app.header_label(i)).style(
             Style::default()
@@ -38,16 +60,16 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     }))
     .style(Style::default().bg(c(m.surface0)));
 
-    let str_columns: Vec<Option<Series>> = app
-        .view
+    let str_columns: Vec<Option<Series>> = visible_view
         .get_columns()
         .iter()
         .map(|col| col.as_series().and_then(|s| s.cast(&DataType::String).ok()))
         .collect();
 
-    let rows: Vec<Row> = (0..app.view.height())
+    let rows: Vec<Row> = (0..slice_len)
         .map(|i| {
-            let bg = if i % 2 == 0 { c(m.base) } else { c(m.mantle) };
+            let abs_row = app.view_offset + i;
+            let bg = if abs_row % 2 == 0 { c(m.base) } else { c(m.mantle) };
             Row::new(
                 str_columns
                     .iter()
@@ -92,15 +114,14 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    let chunks = Layout::default()
-        .direction(ratatui::layout::Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
-        .split(frame.area());
-
     let (bar_text, bar_style) = get_bar(app, m);
     let bar = Paragraph::new(bar_text).style(bar_style);
 
-    frame.render_stateful_widget(table, chunks[0], &mut app.state);
+    // Render with a temporary state so ratatui doesn't try to manage scroll offset.
+    let mut render_state = ratatui::widgets::TableState::default();
+    render_state.select(Some(selected.saturating_sub(app.view_offset)));
+    render_state.select_column(app.state.selected_column());
+    frame.render_stateful_widget(table, chunks[0], &mut render_state);
     frame.render_widget(bar, chunks[1]);
 
     if app.show_stats {

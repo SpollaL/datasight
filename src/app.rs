@@ -99,6 +99,7 @@ pub struct App {
     pub plot_type: PlotType,
     pub columns_profile: Vec<ColumnProfile>,
     pub columns_view_state: TableState,
+    pub view_offset: usize,
 }
 
 impl App {
@@ -138,6 +139,7 @@ impl App {
             plot_type: PlotType::Line,
             columns_profile: Vec::new(),
             columns_view_state: TableState::default(),
+            view_offset: 0,
         };
         if !app.df.is_empty() {
             app.state.select(Some(0));
@@ -205,6 +207,7 @@ impl App {
             .collect()
             .unwrap_or(self.df.clone());
 
+        self.view_offset = 0;
         self.view = if let Some(sort_col) = self.sort_column {
             let col_name = &self.headers[sort_col];
             let opts = SortMultipleOptions::default()
@@ -410,6 +413,7 @@ impl App {
             .sort([&first_key], SortMultipleOptions::default())
             .collect();
         if let Ok(df) = result {
+            self.view_offset = 0;
             self.saved_headers = self.headers.clone();
             self.saved_column_widths = self.column_widths.clone();
             self.headers = df
@@ -468,6 +472,7 @@ impl App {
     }
 
     pub fn clear_groupby(&mut self) {
+        self.view_offset = 0;
         self.headers = self.saved_headers.clone();
         self.column_widths = self.saved_column_widths.clone();
         self.groupby_keys = Vec::new();
