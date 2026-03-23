@@ -146,3 +146,29 @@ For histogram, the Y column is binned automatically — no X column selection ne
 | `S` | Toggle column stats popup |
 | `?` | Toggle help popup |
 | `q` | Quit |
+
+## Troubleshooting
+
+**The display looks garbled or misaligned**
+
+Your terminal may not support 256 colors or Unicode box-drawing characters. Try a modern terminal emulator (kitty, alacritty, iTerm2, Windows Terminal) and make sure `TERM` is set to `xterm-256color`.
+
+**Columns are too narrow or too wide**
+
+Press `=` to autofit all columns to their content, or `_` to autofit only the current column.
+
+**Filtering with `>`, `<`, `>=`, `<=` shows an error**
+
+These operators only work on numeric columns. Use `= value` or `!= value` for exact string matching, or plain text for substring search.
+
+**The unique values popup shows fewer results than expected**
+
+The popup is capped at the 500 most frequent values. If your column has more than 500 distinct values, the title will say `[top 500]`.
+
+**Large files are slow to open**
+
+iron-sight reads the entire file into memory on startup using Polars. In practice, load times are fast: a 42 MB / 1M-row CSV loads in under 0.1s using ~115 MB RAM. Multi-GB files will use proportionally more memory. Once loaded, navigation and filtering are fast regardless of row count.
+
+**Parquet file fails to open**
+
+Make sure the file is a valid Parquet file. Compressed or encrypted Parquet variants are not supported.

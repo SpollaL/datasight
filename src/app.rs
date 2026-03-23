@@ -89,6 +89,7 @@ pub struct App {
     pub search_cursor: usize,
     pub filters: Vec<(usize, String)>,
     pub filter_input: String,
+    pub filter_error: Option<String>,
     pub sort_column: Option<usize>,
     pub sort_direction: SortDirection,
     pub show_stats: bool,
@@ -111,11 +112,65 @@ pub struct App {
     pub unique_values_query: String,
     pub unique_values_state: TableState,
     pub unique_values_col: usize,
+    pub unique_values_truncated: bool,
 }
 
 /// Build a polars filter expression for a column and query string.
 /// Supports comparison operators (>, <, >=, <=, =, !=) for numeric values.
 /// Falls back to case-insensitive substring matching for everything else.
+/// Returns true when the query is just an operator with no value yet (user still typing).
+fn is_incomplete_operator(query: &str) -> bool {
+    let q = query.trim();
+    let rest = if let Some(r) = q.strip_prefix(">=") {
+        r.trim()
+    } else if let Some(r) = q.strip_prefix("<=") {
+        r.trim()
+    } else if let Some(r) = q.strip_prefix("!=") {
+        r.trim()
+    } else if let Some(r) = q.strip_prefix('>') {
+        r.trim()
+    } else if let Some(r) = q.strip_prefix('<') {
+        r.trim()
+    } else if let Some(r) = q.strip_prefix('=') {
+        r.trim()
+    } else {
+        return false;
+    };
+    rest.is_empty()
+}
+
+/// Returns an error string if `query` uses a numeric-only operator (>, <, >=, <=)
+/// with a non-numeric value or against a non-numeric column.
+fn validate_filter_query(query: &str, col_name: &str, df: &DataFrame) -> Option<String> {
+    let q = query.trim();
+    let (op, rest) = if let Some(r) = q.strip_prefix(">=") {
+        (">=", r.trim())
+    } else if let Some(r) = q.strip_prefix("<=") {
+        ("<=", r.trim())
+    } else if let Some(r) = q.strip_prefix('>') {
+        (">", r.trim())
+    } else if let Some(r) = q.strip_prefix('<') {
+        ("<", r.trim())
+    } else {
+        return None;
+    };
+    // Numeric operators require a numeric value
+    if !rest.is_empty() && rest.parse::<f64>().is_err() {
+        return Some(format!("'{}' requires a number (got '{}')", op, rest));
+    }
+    // Numeric operators require a numeric column
+    let is_numeric_col = df
+        .column(col_name)
+        .ok()
+        .and_then(|c| c.as_series())
+        .map(|s| s.dtype().is_primitive_numeric())
+        .unwrap_or(false);
+    if !is_numeric_col {
+        return Some(format!("'{}' can only filter numeric columns", op));
+    }
+    None
+}
+
 fn build_filter_expr(col_name: &str, query: &str) -> Expr {
     let q = query.trim();
     let (op, rest) = if let Some(r) = q.strip_prefix(">=") {
@@ -186,6 +241,7 @@ impl App {
             search_results: Vec::new(),
             search_cursor: 0,
             filter_input: String::new(),
+            filter_error: None,
             filters: Vec::new(),
             sort_column: None,
             sort_direction: SortDirection::Ascending,
@@ -209,6 +265,7 @@ impl App {
             unique_values_query: String::new(),
             unique_values_state: TableState::default(),
             unique_values_col: 0,
+            unique_values_truncated: false,
         };
         if !app.df.is_empty() {
             app.state.select(Some(0));
@@ -254,9 +311,14 @@ impl App {
             let col_name = &self.headers[*colidx];
             mask = mask.and(build_filter_expr(col_name, query));
         }
-        if !self.filter_input.is_empty() {
-            let col_name = &self.headers[self.state.selected_column().unwrap_or(0)];
-            mask = mask.and(build_filter_expr(col_name, &self.filter_input));
+        if !self.filter_input.is_empty() && !is_incomplete_operator(&self.filter_input) {
+            let col_name = self.headers[self.state.selected_column().unwrap_or(0)].clone();
+            self.filter_error = validate_filter_query(&self.filter_input, &col_name, &self.df);
+            if self.filter_error.is_none() {
+                mask = mask.and(build_filter_expr(&col_name, &self.filter_input));
+            }
+        } else {
+            self.filter_error = None;
         }
         let filtered = self
             .df
@@ -526,7 +588,9 @@ impl App {
             }
             let mut pairs: Vec<(String, usize)> = map.into_iter().collect();
             pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            let truncated = pairs.len() > MAX_UNIQUE;
             pairs.truncate(MAX_UNIQUE);
+            self.unique_values_truncated = truncated;
             Some(pairs)
         })()
         .unwrap_or_default();

@@ -229,6 +229,9 @@ fn to_first_search_query_result(app: &mut App) {
 }
 
 fn to_normal_mode_with_filter(app: &mut App) {
+    if app.filter_error.is_some() {
+        return;
+    }
     app.mode = Mode::Normal;
     if !app.filter_input.is_empty() {
         app.filters.push((

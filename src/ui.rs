@@ -286,13 +286,25 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                 .fg(c(m.base))
                 .add_modifier(Modifier::BOLD),
         ),
-        Mode::Filter => (
-            format!(" f {}_ (>,<,>=,<=,!=,= for numbers) ", app.filter_input),
-            Style::default()
-                .bg(c(m.sapphire))
-                .fg(c(m.base))
-                .add_modifier(Modifier::BOLD),
-        ),
+        Mode::Filter => {
+            if let Some(ref err) = app.filter_error {
+                (
+                    format!(" f {}_ — {} ", app.filter_input, err),
+                    Style::default()
+                        .bg(c(m.red))
+                        .fg(c(m.base))
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                (
+                    format!(" f {}_ (>,<,>=,<=,!=,= for numbers) ", app.filter_input),
+                    Style::default()
+                        .bg(c(m.sapphire))
+                        .fg(c(m.base))
+                        .add_modifier(Modifier::BOLD),
+                )
+            }
+        }
         Mode::Normal => {
             let (text, fg) = if app.groupby_active {
                 let key_names = app
@@ -467,10 +479,16 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::
         .headers
         .get(app.unique_values_col)
         .map_or("", |s| s.as_str());
+    let truncated_note = if app.unique_values_truncated {
+        " [top 500]"
+    } else {
+        ""
+    };
     let title = format!(
-        " Unique: {} ({} shown) ",
+        " Unique: {} ({} shown{}) ",
         col_name,
-        app.unique_values_filtered.len()
+        app.unique_values_filtered.len(),
+        truncated_note
     );
 
     let outer = Block::default()
