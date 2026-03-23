@@ -15,6 +15,8 @@ pub struct ColumnProfile {
 }
 
 const DEFAULT_COLUMN_WIDTH: u16 = 15;
+const MIN_COLUMN_WIDTH: u16 = 6;
+const MAX_COLUMN_WIDTH: u16 = 40;
 
 pub struct Config {
     pub file_path: String,
@@ -102,6 +104,7 @@ pub struct App {
     pub columns_profile: Vec<ColumnProfile>,
     pub columns_view_state: TableState,
     pub view_offset: usize,
+    pub col_offset: usize,
     pub unique_values: Vec<(String, usize)>,
     pub unique_values_filtered: Vec<(String, usize)>,
     pub unique_values_query: String,
@@ -198,6 +201,7 @@ impl App {
             columns_profile: Vec::new(),
             columns_view_state: TableState::default(),
             view_offset: 0,
+            col_offset: 0,
             unique_values: Vec::new(),
             unique_values_filtered: Vec::new(),
             unique_values_query: String::new(),
@@ -322,7 +326,10 @@ impl App {
                     max
                 })
                 .unwrap_or(0);
-            self.column_widths[col_idx] = max_data.max(header_width);
+            self.column_widths[col_idx] = max_data
+                .max(header_width)
+                .max(MIN_COLUMN_WIDTH)
+                .min(MAX_COLUMN_WIDTH);
         }
     }
 
@@ -347,7 +354,10 @@ impl App {
                         .map(|n| n as u16)
                 })
                 .unwrap_or(0);
-            self.column_widths[col_idx] = max_data.max(header_width);
+            self.column_widths[col_idx] = max_data
+                .max(header_width)
+                .max(MIN_COLUMN_WIDTH)
+                .min(MAX_COLUMN_WIDTH);
         }
     }
 
@@ -762,8 +772,8 @@ mod tests {
         app.autofit_all_columns();
         // "name" col: max("Alice"=5, "Bob"=3, "Charlie"=7) = 7
         assert_eq!(app.column_widths[0], 7);
-        // "age" col: max("30"=2, "25"=2, "35"=2) = 3, header "age" = 3
-        assert_eq!(app.column_widths[1], 3);
+        // "age" col: max("30"=2, "25"=2, "35"=2) = 3, header "age" = 3 → clamped to MIN_COLUMN_WIDTH=6
+        assert_eq!(app.column_widths[1], 6);
     }
 
     #[test]

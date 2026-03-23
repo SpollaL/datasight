@@ -54,7 +54,43 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     let slice_len = page_h.min(total_rows.saturating_sub(app.view_offset));
     let visible_view = app.view.slice(app.view_offset as i64, slice_len);
 
-    let header_cells = Row::new((0..app.headers.len()).map(|i| {
+    // Horizontal windowing: only pass columns that fit the terminal width to ratatui.
+    // 2 border chars; column spacing of 1 between every pair of adjacent columns.
+    let available_w = chunks[0].width.saturating_sub(2) as usize;
+    let total_cols = app.headers.len();
+    let selected_col = app.state.selected_column().unwrap_or(0);
+
+    // Count how many columns fit starting from a given offset.
+    let count_from = |start: usize| -> usize {
+        let mut used = 0usize;
+        let mut count = 0usize;
+        for i in start..total_cols {
+            let w = app.column_widths.get(i).copied().unwrap_or(15) as usize;
+            let needed = if count == 0 { w } else { w + 1 }; // +1 column spacing
+            if used + needed > available_w && count > 0 {
+                break;
+            }
+            used += needed;
+            count += 1;
+        }
+        count.max(1)
+    };
+
+    // Scroll col_offset to keep selected_col visible.
+    if selected_col < app.col_offset {
+        app.col_offset = selected_col;
+    } else {
+        let vis = count_from(app.col_offset);
+        if selected_col >= app.col_offset + vis {
+            app.col_offset = selected_col.saturating_sub(vis.saturating_sub(1));
+        }
+    }
+    app.col_offset = app.col_offset.min(total_cols.saturating_sub(1));
+
+    let vis_count = count_from(app.col_offset);
+    let vis_cols: Vec<usize> = (app.col_offset..total_cols).take(vis_count).collect();
+
+    let header_cells = Row::new(vis_cols.iter().map(|&i| {
         Cell::from(app.header_label(i)).style(
             Style::default()
                 .fg(c(m.lavender))
@@ -63,10 +99,16 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     }))
     .style(Style::default().bg(c(m.surface0)));
 
-    let str_columns: Vec<Option<Series>> = visible_view
-        .get_columns()
+    // Pre-cast only the visible columns to String series.
+    let all_columns = visible_view.get_columns();
+    let str_columns: Vec<Option<Series>> = vis_cols
         .iter()
-        .map(|col| col.as_series().and_then(|s| s.cast(&DataType::String).ok()))
+        .map(|&i| {
+            all_columns
+                .get(i)
+                .and_then(|col| col.as_series())
+                .and_then(|s| s.cast(&DataType::String).ok())
+        })
         .collect();
 
     let rows: Vec<Row> = (0..slice_len)
@@ -95,10 +137,9 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
         })
         .collect();
 
-    let widths: Vec<Constraint> = app
-        .column_widths
+    let widths: Vec<Constraint> = vis_cols
         .iter()
-        .map(|w| Constraint::Length(*w))
+        .map(|&i| Constraint::Length(app.column_widths[i]))
         .collect();
 
     let table = Table::new(rows, widths)
@@ -124,10 +165,10 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     let (bar_text, bar_style) = get_bar(app, m);
     let bar = Paragraph::new(bar_text).style(bar_style);
 
-    // Render with a temporary state so ratatui doesn't try to manage scroll offset.
+    // Render with a temporary state. Column index is relative to the visible window.
     let mut render_state = ratatui::widgets::TableState::default();
     render_state.select(Some(selected.saturating_sub(app.view_offset)));
-    render_state.select_column(app.state.selected_column());
+    render_state.select_column(Some(selected_col.saturating_sub(app.col_offset)));
     frame.render_stateful_widget(table, chunks[0], &mut render_state);
     frame.render_widget(bar, chunks[1]);
 

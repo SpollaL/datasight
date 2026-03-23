@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-03-23
+
+### Fixed
+- Wide files (many columns) no longer render blank — the table now uses horizontal viewport windowing, only passing visible columns to ratatui instead of all columns at once
+- Autofit (`_`, `=`) now clamps column widths to a minimum of 6 and maximum of 40 characters, preventing columns from becoming unreadably narrow or screen-dominating wide
+
 ## [0.3.0] - 2026-03-05
 
 ### Added
