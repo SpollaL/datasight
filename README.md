@@ -1,8 +1,8 @@
-# iron-sight
+# datasight
 
-A terminal CSV/Parquet viewer with vim-style navigation, built with Rust and ratatui. Themed with [Catppuccin Mocha](https://github.com/catppuccin/catppuccin).
+A terminal viewer for CSV and Parquet files with vim-style navigation, built with Rust and ratatui. Themed with [Catppuccin Mocha](https://github.com/catppuccin/catppuccin).
 
-[![CI](https://github.com/SpollaL/iron-sight/actions/workflows/ci.yml/badge.svg)](https://github.com/SpollaL/iron-sight/actions/workflows/ci.yml)
+[![CI](https://github.com/SpollaL/datasight/actions/workflows/ci.yml/badge.svg)](https://github.com/SpollaL/datasight/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ![demo](.github/assets/demo.gif)
@@ -27,14 +27,14 @@ A terminal CSV/Parquet viewer with vim-style navigation, built with Rust and rat
 
 ### Pre-built binaries (recommended)
 
-Download the latest binary for your platform from the [GitHub Releases](https://github.com/SpollaL/iron-sight/releases) page.
+Download the latest binary for your platform from the [GitHub Releases](https://github.com/SpollaL/datasight/releases) page.
 
 ### Build from source
 
 Requires Rust 1.75 or higher.
 
 ```
-cargo install --git https://github.com/SpollaL/iron-sight
+cargo install --git https://github.com/SpollaL/datasight
 ```
 
 Or clone and run locally:
@@ -167,7 +167,7 @@ The popup is capped at the 500 most frequent values. If your column has more tha
 
 **Large files are slow to open**
 
-iron-sight reads the entire file into memory on startup using Polars. In practice, load times are fast: a 42 MB / 1M-row CSV loads in under 0.1s using ~115 MB RAM. Multi-GB files will use proportionally more memory. Once loaded, navigation and filtering are fast regardless of row count.
+datasight reads the entire file into memory on startup using Polars. In practice, load times are fast: a 42 MB / 1M-row CSV loads in under 0.1s using ~115 MB RAM. Multi-GB files will use proportionally more memory. Once loaded, navigation and filtering are fast regardless of row count.
 
 **Parquet file fails to open**
 

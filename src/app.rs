@@ -18,20 +18,6 @@ const DEFAULT_COLUMN_WIDTH: u16 = 15;
 const MIN_COLUMN_WIDTH: u16 = 6;
 const MAX_COLUMN_WIDTH: u16 = 40;
 
-pub struct Config {
-    pub file_path: String,
-}
-
-impl Config {
-    pub fn new(mut args: impl Iterator<Item = String>) -> Result<Config, &'static str> {
-        args.next();
-        let file_path = match args.next() {
-            Some(arg) => arg,
-            None => return Err("Please provide a valid CSV file path"),
-        };
-        Ok(Config { file_path })
-    }
-}
 
 #[derive(Debug)]
 pub enum Mode {

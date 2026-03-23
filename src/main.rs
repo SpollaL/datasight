@@ -2,10 +2,18 @@ mod app;
 mod events;
 mod ui;
 
-use app::{App, Config};
+use app::App;
+use clap::Parser;
 use events::run_app;
 use polars::prelude::*;
-use std::{env, path::Path};
+use std::path::Path;
+
+#[derive(Parser)]
+#[command(name = "datasight", version, about = "A terminal viewer for CSV and Parquet files")]
+struct Cli {
+    /// Path to a CSV or Parquet file
+    file: String,
+}
 
 fn load_dataframe(file_path: &str) -> Result<DataFrame, Box<dyn std::error::Error>> {
     let ext = Path::new(file_path)
@@ -23,16 +31,13 @@ fn load_dataframe(file_path: &str) -> Result<DataFrame, Box<dyn std::error::Erro
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::new(env::args()).unwrap_or_else(|err| {
-        eprintln!("Problem parsing arguments: {}", err);
+    let cli = Cli::parse();
+
+    let df = load_dataframe(&cli.file).unwrap_or_else(|err| {
+        eprintln!("Error loading file: {}", err);
         std::process::exit(1);
     });
 
-    let df = load_dataframe(&config.file_path).unwrap_or_else(|err| {
-        eprintln!("Problem loading file: {}", err);
-        std::process::exit(1);
-    });
-
-    let app = App::new(df, config.file_path);
+    let app = App::new(df, cli.file);
     ratatui::run(|terminal| run_app(terminal, app))
 }

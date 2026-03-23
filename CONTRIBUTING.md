@@ -1,4 +1,4 @@
-# Contributing to iron-sight
+# Contributing to datasight
 
 Thanks for your interest in contributing!
 
@@ -7,8 +7,8 @@ Thanks for your interest in contributing!
 Requires Rust 1.75 or higher. Install via [rustup](https://rustup.rs/).
 
 ```
-git clone https://github.com/SpollaL/iron-sight
-cd iron-sight
+git clone https://github.com/SpollaL/datasight
+cd datasight
 cargo build
 cargo run -- <path-to-file.csv>
 ```
@@ -50,7 +50,7 @@ Use the `make_app()` helper in `app.rs` tests to avoid boilerplate. Add test cas
 ## Reporting bugs
 
 Open an issue on GitHub with:
-- The iron-sight version (`iron-sight --version` or from the release page)
+- The datasight version (`datasight --version` or from the release page)
 - Your OS and terminal
 - A minimal CSV/Parquet file that reproduces the issue, if applicable
 - Steps to reproduce

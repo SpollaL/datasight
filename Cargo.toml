@@ -1,10 +1,10 @@
 [package]
-name = "iron-sight"
+name = "datasight"
 version = "0.3.2"
 edition = "2021"
-description = "A terminal CSV/Parquet viewer with vim-style navigation and plotting"
+description = "A terminal viewer for tabular data files (CSV, Parquet) with vim-style navigation and plotting"
 license = "MIT"
-repository = "https://github.com/Spollal/iron-sight"
+repository = "https://github.com/SpollaL/datasight"
 rust-version = "1.75"
 keywords = ["csv", "parquet", "tui", "terminal", "viewer"]
 categories = ["command-line-utilities", "visualization"]
@@ -14,6 +14,7 @@ crossterm = "0.29.0"
 ratatui = "0.30.0"
 polars = { version = "0.46", features = ["csv", "parquet", "lazy", "strings", "regex"] }
 catppuccin = "2"
+clap = { version = "4", features = ["derive"] }
 
 # The profile that 'dist' will build with
 [profile.dist]
