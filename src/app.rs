@@ -93,6 +93,7 @@ pub struct App {
     pub sort_direction: SortDirection,
     pub show_stats: bool,
     pub show_help: bool,
+    pub help_scroll: u16,
     pub groupby_keys: Vec<usize>,
     pub groupby_aggs: HashMap<usize, AggFunc>,
     pub groupby_active: bool,
@@ -190,6 +191,7 @@ impl App {
             sort_direction: SortDirection::Ascending,
             show_stats: false,
             show_help: false,
+            help_scroll: 0,
             groupby_keys: Vec::new(),
             groupby_aggs: HashMap::new(),
             groupby_active: false,
@@ -328,8 +330,7 @@ impl App {
                 .unwrap_or(0);
             self.column_widths[col_idx] = max_data
                 .max(header_width)
-                .max(MIN_COLUMN_WIDTH)
-                .min(MAX_COLUMN_WIDTH);
+                .clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH);
         }
     }
 
@@ -356,8 +357,7 @@ impl App {
                 .unwrap_or(0);
             self.column_widths[col_idx] = max_data
                 .max(header_width)
-                .max(MIN_COLUMN_WIDTH)
-                .min(MAX_COLUMN_WIDTH);
+                .clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH);
         }
     }
 

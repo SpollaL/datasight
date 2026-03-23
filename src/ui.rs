@@ -205,10 +205,16 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     if app.show_help {
         let area = centered_rect(55, 80, frame.area());
         frame.render_widget(Clear, area);
-        let popup = Paragraph::new(help_text(m))
+        let text = help_text(m);
+        let total_lines = text.lines.len() as u16;
+        let visible_lines = area.height.saturating_sub(2); // subtract top+bottom borders
+        app.help_scroll = app
+            .help_scroll
+            .min(total_lines.saturating_sub(visible_lines));
+        let popup = Paragraph::new(text)
             .block(
                 Block::default()
-                    .title(" Help — press ? or Esc to close ")
+                    .title(" Help — j/k to scroll · ? or Esc to close ")
                     .title_style(
                         Style::default()
                             .fg(c(m.lavender))
@@ -218,7 +224,8 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(c(m.lavender))),
             )
-            .style(Style::default().bg(c(m.surface0)).fg(c(m.text)));
+            .style(Style::default().bg(c(m.surface0)).fg(c(m.text)))
+            .scroll((app.help_scroll, 0));
         frame.render_widget(popup, area);
     }
 

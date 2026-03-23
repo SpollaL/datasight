@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-03-23
+
+### Fixed
+- Help popup (`?`) now supports scrolling with `j`/`k`, `PageDown`/`PageUp`; scroll is capped so it cannot go past the last line
+
 ## [0.3.1] - 2026-03-23
 
 ### Fixed

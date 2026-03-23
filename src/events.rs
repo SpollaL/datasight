@@ -13,6 +13,25 @@ pub fn run_app(
 
         if let event::Event::Key(key) = event::read()? {
             match app.mode {
+                Mode::Normal if app.show_help => match key.code {
+                    event::KeyCode::Char('j') | event::KeyCode::Down => {
+                        app.help_scroll = app.help_scroll.saturating_add(1)
+                    }
+                    event::KeyCode::Char('k') | event::KeyCode::Up => {
+                        app.help_scroll = app.help_scroll.saturating_sub(1)
+                    }
+                    event::KeyCode::PageDown => {
+                        app.help_scroll = app.help_scroll.saturating_add(PAGE_SCROLL_AMOUNT)
+                    }
+                    event::KeyCode::PageUp => {
+                        app.help_scroll = app.help_scroll.saturating_sub(PAGE_SCROLL_AMOUNT)
+                    }
+                    event::KeyCode::Char('?') | event::KeyCode::Esc => {
+                        app.show_help = false;
+                        app.help_scroll = 0;
+                    }
+                    _ => {}
+                },
                 Mode::Normal => match key.code {
                     event::KeyCode::Char('q') => app.should_quit = true,
                     event::KeyCode::Down => app.state.select_next(),
