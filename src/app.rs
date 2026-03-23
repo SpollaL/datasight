@@ -18,7 +18,6 @@ const DEFAULT_COLUMN_WIDTH: u16 = 15;
 const MIN_COLUMN_WIDTH: u16 = 6;
 const MAX_COLUMN_WIDTH: u16 = 40;
 
-
 #[derive(Debug)]
 pub enum Mode {
     Search,

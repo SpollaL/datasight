@@ -9,7 +9,11 @@ use polars::prelude::*;
 use std::path::Path;
 
 #[derive(Parser)]
-#[command(name = "datasight", version, about = "A terminal viewer for CSV and Parquet files")]
+#[command(
+    name = "datasight",
+    version,
+    about = "A terminal viewer for CSV and Parquet files"
+)]
 struct Cli {
     /// Path to a CSV or Parquet file
     file: String,
