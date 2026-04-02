@@ -51,11 +51,7 @@ cargo run -- -d '|' <path-to-file.psv>   # pipe-separated
 cargo run -- -d ';' <path-to-file.csv>   # semicolon-separated
 ```
 
-Sample fixtures for all supported formats are in `tests/fixtures/`. To regenerate `orders.parquet`:
-
-```
-cargo run --example create_test_parquet
-```
+Sample fixtures for all supported formats are in `tests/fixtures/`.
 
 ### Pipe from stdin
 
