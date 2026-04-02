@@ -84,7 +84,15 @@ fn load_dataframe(
             .with_json_format(JsonFormat::Json)
             .finish()?),
         "ndjson" | "jsonl" => Ok(JsonLineReader::new(std::fs::File::open(file_path)?).finish()?),
-        _ => Err(format!("Unsupported file format: .{}", ext).into()),
+        _ => {
+            if let Some(sep) = delimiter {
+                Ok(csv_options(sep)
+                    .try_into_reader_with_file_path(Some(file_path.into()))?
+                    .finish()?)
+            } else {
+                Err(format!("Unsupported file format: .{}", ext).into())
+            }
+        }
     }
 }
 
