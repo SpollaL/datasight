@@ -32,7 +32,11 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
 
     let chunks = Layout::default()
         .direction(ratatui::layout::Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Min(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
         .split(frame.area());
 
     // 2 borders + 1 header row + 1 header bottom-margin = 4 rows of overhead.
@@ -171,6 +175,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     render_state.select_column(Some(selected_col.saturating_sub(app.col_offset)));
     frame.render_stateful_widget(table, chunks[0], &mut render_state);
     frame.render_widget(bar, chunks[1]);
+    frame.render_widget(Paragraph::new(shortcut_bar(app, m)), chunks[2]);
 
     if app.show_stats {
         let col = app.state.selected_column().unwrap_or(0);
@@ -232,6 +237,149 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     if matches!(app.mode, Mode::UniqueValues) {
         render_unique_values_popup(frame, app, m);
     }
+}
+
+fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
+    // (primary, secondary) — primary keys are highlighted in blue, secondary in grey.
+    // Secondary = always-valid base shortcuts not already shown in primary.
+    type Shortcuts = &'static [(&'static str, &'static str)];
+    let (primary, secondary): (Shortcuts, Shortcuts) = match app.mode {
+        Mode::Normal if app.groupby_active => (
+            &[("B", "Clear group-by"), ("s", "Sort"), ("p", "Plot")],
+            &[
+                ("/", "Search"),
+                ("f", "Filter"),
+                ("b", "Group-by"),
+                ("i", "Inspector"),
+                ("u", "Unique"),
+                ("?", "Help"),
+                ("q", "Quit"),
+            ],
+        ),
+        Mode::Normal if !app.groupby_keys.is_empty() => (
+            &[("b", "Toggle key"), ("a", "Cycle agg"), ("B", "Execute")],
+            &[
+                ("/", "Search"),
+                ("f", "Filter"),
+                ("s", "Sort"),
+                ("p", "Plot"),
+                ("i", "Inspector"),
+                ("u", "Unique"),
+                ("?", "Help"),
+                ("q", "Quit"),
+            ],
+        ),
+        Mode::Normal if !app.search_results.is_empty() => (
+            &[
+                ("n", "Next match"),
+                ("N", "Prev match"),
+                ("/", "New search"),
+            ],
+            &[
+                ("f", "Filter"),
+                ("s", "Sort"),
+                ("b", "Group-by"),
+                ("p", "Plot"),
+                ("i", "Inspector"),
+                ("u", "Unique"),
+                ("?", "Help"),
+                ("q", "Quit"),
+            ],
+        ),
+        Mode::Normal if !app.filters.is_empty() => (
+            &[("F", "Clear filters"), ("f", "Add filter")],
+            &[
+                ("/", "Search"),
+                ("s", "Sort"),
+                ("b", "Group-by"),
+                ("p", "Plot"),
+                ("i", "Inspector"),
+                ("u", "Unique"),
+                ("?", "Help"),
+                ("q", "Quit"),
+            ],
+        ),
+        Mode::Normal => (
+            &[
+                ("/", "Search"),
+                ("f", "Filter"),
+                ("s", "Sort"),
+                ("b", "Group-by"),
+                ("p", "Plot"),
+                ("i", "Inspector"),
+                ("u", "Unique"),
+                ("?", "Help"),
+                ("q", "Quit"),
+            ],
+            &[],
+        ),
+        Mode::Search => (
+            &[
+                ("Enter", "Jump"),
+                ("n / N", "Next / Prev"),
+                ("Esc", "Cancel"),
+            ],
+            &[],
+        ),
+        Mode::Filter => (&[("Enter", "Confirm"), ("Esc", "Cancel")], &[]),
+        Mode::PlotPickX => (
+            &[("← →", "Navigate"), ("Enter", "Confirm"), ("Esc", "Cancel")],
+            &[],
+        ),
+        Mode::Plot => (
+            &[("t", "Cycle type"), ("Esc / p", "Close"), ("q", "Quit")],
+            &[],
+        ),
+        Mode::ColumnsView => (
+            &[
+                ("j / k", "Navigate"),
+                ("Enter", "Jump to column"),
+                ("Esc / i", "Close"),
+            ],
+            &[],
+        ),
+        Mode::UniqueValues => (
+            &[
+                ("type", "Search"),
+                ("j / k", "Navigate"),
+                ("Enter", "Apply filter"),
+                ("Esc", "Close"),
+            ],
+            &[],
+        ),
+    };
+
+    let primary_key = Style::default()
+        .bg(c(m.blue))
+        .fg(c(m.base))
+        .add_modifier(Modifier::BOLD);
+    let secondary_key = Style::default()
+        .bg(c(m.overlay0))
+        .fg(c(m.base))
+        .add_modifier(Modifier::BOLD);
+    let label = Style::default().bg(c(m.mantle)).fg(c(m.subtext0));
+    let gap = Style::default().bg(c(m.mantle));
+    let sep = Style::default().bg(c(m.mantle)).fg(c(m.overlay0));
+
+    let mut spans = Vec::new();
+
+    for (key, action) in primary {
+        spans.push(Span::styled(format!(" {} ", key), primary_key));
+        spans.push(Span::styled(format!(" {} ", action), label));
+        spans.push(Span::styled("  ", gap));
+    }
+
+    if !primary.is_empty() && !secondary.is_empty() {
+        spans.push(Span::styled(" │ ", sep));
+    }
+
+    for (key, action) in secondary {
+        spans.push(Span::styled(format!(" {} ", key), secondary_key));
+        spans.push(Span::styled(format!(" {} ", action), label));
+        spans.push(Span::styled("  ", gap));
+    }
+
+    Line::from(spans).style(Style::default().bg(c(m.mantle)))
 }
 
 fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
@@ -383,6 +531,8 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     ),
                     c(m.teal),
                 )
+            } else if let Some(ref err) = app.sort_error {
+                (format!(" Sort error: {} ", err), c(m.red))
             } else {
                 (
                     format!(
@@ -691,21 +841,26 @@ fn downsample(data: Vec<(f64, f64)>, max_points: usize) -> Vec<(f64, f64)> {
         .collect()
 }
 
-fn compute_histogram(app: &App, y_idx: usize) -> Vec<(f64, f64)> {
-    let col = match app.view.column(&app.headers[y_idx]) {
-        Ok(c) => c,
-        Err(_) => return vec![],
-    };
-    let y_f64 = match series_to_f64(col) {
-        Some(s) => s,
-        None => return vec![],
-    };
+fn compute_histogram(app: &App, y_idx: usize) -> Result<Vec<(f64, f64)>, String> {
+    let col = app
+        .view
+        .column(&app.headers[y_idx])
+        .map_err(|e| format!("Column error: {}", e))?;
+    let y_f64 = series_to_f64(col).ok_or_else(|| {
+        format!(
+            "'{}' is not a numeric column (int or float required)",
+            app.headers[y_idx]
+        )
+    })?;
     let values: Vec<f64> = y_f64
         .f64()
         .map(|ca| ca.into_iter().flatten().collect())
         .unwrap_or_default();
     if values.is_empty() {
-        return vec![];
+        return Err(format!(
+            "'{}' contains no non-null numeric values",
+            app.headers[y_idx]
+        ));
     }
     let n = values.len();
     // Sturges' rule, clamped to a sensible range.
@@ -713,7 +868,7 @@ fn compute_histogram(app: &App, y_idx: usize) -> Vec<(f64, f64)> {
     let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
     let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
     if (max - min).abs() < f64::EPSILON {
-        return vec![(min, n as f64)];
+        return Ok(vec![(min, n as f64)]);
     }
     let bin_w = (max - min) / n_bins as f64;
     let mut counts = vec![0u64; n_bins];
@@ -721,11 +876,11 @@ fn compute_histogram(app: &App, y_idx: usize) -> Vec<(f64, f64)> {
         let bin = ((v - min) / bin_w) as usize;
         counts[bin.min(n_bins - 1)] += 1;
     }
-    counts
+    Ok(counts
         .iter()
         .enumerate()
         .map(|(i, &c)| (min + (i as f64 + 0.5) * bin_w, c as f64))
-        .collect()
+        .collect())
 }
 
 fn render_histogram(
@@ -749,21 +904,23 @@ fn render_histogram(
         bar_area,
     );
 
-    let data = compute_histogram(app, y_idx);
-    if data.is_empty() {
-        let msg = Paragraph::new(" No data to plot. Column must be numeric (int or float). ")
-            .block(
-                Block::default()
-                    .title(" Plot Error ")
-                    .title_style(Style::default().fg(c(m.red)).add_modifier(Modifier::BOLD))
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(c(m.red))),
-            )
-            .style(Style::default().bg(c(m.base)).fg(c(m.text)));
-        frame.render_widget(msg, chart_area);
-        return;
-    }
+    let data = match compute_histogram(app, y_idx) {
+        Ok(d) => d,
+        Err(msg) => {
+            let paragraph = Paragraph::new(format!(" {} ", msg))
+                .block(
+                    Block::default()
+                        .title(" Plot Error ")
+                        .title_style(Style::default().fg(c(m.red)).add_modifier(Modifier::BOLD))
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Rounded)
+                        .border_style(Style::default().fg(c(m.red))),
+                )
+                .style(Style::default().bg(c(m.base)).fg(c(m.text)));
+            frame.render_widget(paragraph, chart_area);
+            return;
+        }
+    };
 
     let x_min = data.first().map(|p| p.0).unwrap_or(0.0);
     let x_max = data.last().map(|p| p.0).unwrap_or(1.0);
