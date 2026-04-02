@@ -1,6 +1,6 @@
 # datasight
 
-A terminal viewer for CSV, Parquet, and JSON files with vim-style navigation, built with Rust and ratatui. Themed with [Catppuccin Mocha](https://github.com/catppuccin/catppuccin).
+A terminal viewer for CSV, TSV, Parquet, and JSON files with vim-style navigation, built with Rust and ratatui. Themed with [Catppuccin Mocha](https://github.com/catppuccin/catppuccin).
 
 [![CI](https://github.com/SpollaL/datasight/actions/workflows/ci.yml/badge.svg)](https://github.com/SpollaL/datasight/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -20,7 +20,8 @@ A terminal viewer for CSV, Parquet, and JSON files with vim-style navigation, bu
 - Column stats popup (`S`)
 - In-app help popup (`?`)
 - Catppuccin Mocha color theme with zebra-striped rows and mode-aware status bar
-- Supports CSV, Parquet, JSON (`[{...}]`), and NDJSON/JSON Lines (`.ndjson`, `.jsonl`) files
+- Supports CSV, TSV, Parquet, JSON (`[{...}]`), and NDJSON/JSON Lines (`.ndjson`, `.jsonl`) files
+- Custom delimiter support via `-d` flag — works with pipe-separated, semicolon-separated, and any single-character delimiter
 - Pipe-friendly — reads from stdin with automatic format detection (CSV, JSON, NDJSON)
 - Viewport-windowed rendering — stays fast on large files
 
@@ -42,9 +43,12 @@ Or clone and run locally:
 
 ```
 cargo run -- <path-to-file.csv>
+cargo run -- <path-to-file.tsv>
 cargo run -- <path-to-file.parquet>
 cargo run -- <path-to-file.json>
 cargo run -- <path-to-file.ndjson>
+cargo run -- -d '|' <path-to-file.csv>   # pipe-separated
+cargo run -- -d ';' <path-to-file.csv>   # semicolon-separated
 ```
 
 ### Pipe from stdin
@@ -54,6 +58,12 @@ datasight reads from stdin when no file is given. Format is detected automatical
 ```bash
 # CSV
 cat data.csv | datasight
+
+# TSV
+cat data.tsv | datasight
+
+# Pipe-separated via flag
+cat data.psv | datasight -d '|'
 
 # JSON array of objects
 curl https://api.example.com/records | datasight
