@@ -75,6 +75,7 @@ pub struct App {
     pub filters: Vec<(usize, String)>,
     pub filter_input: String,
     pub filter_error: Option<String>,
+    pub sort_error: Option<String>,
     pub sort_column: Option<usize>,
     pub sort_direction: SortDirection,
     pub show_stats: bool,
@@ -100,45 +101,49 @@ pub struct App {
     pub unique_values_truncated: bool,
 }
 
+/// Strips a leading comparison operator from `query`.
+/// Returns `(op, rest)` where `op` is one of `">="`, `"<="`, `"!="`, `">"`, `"<"`, `"="`,
+/// or `""` (no operator found), and `rest` is the trimmed remainder of the string.
+/// Two-character operators are checked before their single-character prefixes.
+fn parse_operator(query: &str) -> (&'static str, &str) {
+    let q = query.trim();
+    if let Some(r) = q.strip_prefix(">=") {
+        return (">=", r.trim());
+    }
+    if let Some(r) = q.strip_prefix("<=") {
+        return ("<=", r.trim());
+    }
+    if let Some(r) = q.strip_prefix("!=") {
+        return ("!=", r.trim());
+    }
+    if let Some(r) = q.strip_prefix('>') {
+        return (">", r.trim());
+    }
+    if let Some(r) = q.strip_prefix('<') {
+        return ("<", r.trim());
+    }
+    if let Some(r) = q.strip_prefix('=') {
+        return ("=", r.trim());
+    }
+    ("", q)
+}
+
 /// Build a polars filter expression for a column and query string.
 /// Supports comparison operators (>, <, >=, <=, =, !=) for numeric values.
 /// Falls back to case-insensitive substring matching for everything else.
 /// Returns true when the query is just an operator with no value yet (user still typing).
 fn is_incomplete_operator(query: &str) -> bool {
-    let q = query.trim();
-    let rest = if let Some(r) = q.strip_prefix(">=") {
-        r.trim()
-    } else if let Some(r) = q.strip_prefix("<=") {
-        r.trim()
-    } else if let Some(r) = q.strip_prefix("!=") {
-        r.trim()
-    } else if let Some(r) = q.strip_prefix('>') {
-        r.trim()
-    } else if let Some(r) = q.strip_prefix('<') {
-        r.trim()
-    } else if let Some(r) = q.strip_prefix('=') {
-        r.trim()
-    } else {
-        return false;
-    };
-    rest.is_empty()
+    let (op, rest) = parse_operator(query);
+    !op.is_empty() && rest.is_empty()
 }
 
 /// Returns an error string if `query` uses a numeric-only operator (>, <, >=, <=)
 /// with a non-numeric value or against a non-numeric column.
 fn validate_filter_query(query: &str, col_name: &str, df: &DataFrame) -> Option<String> {
-    let q = query.trim();
-    let (op, rest) = if let Some(r) = q.strip_prefix(">=") {
-        (">=", r.trim())
-    } else if let Some(r) = q.strip_prefix("<=") {
-        ("<=", r.trim())
-    } else if let Some(r) = q.strip_prefix('>') {
-        (">", r.trim())
-    } else if let Some(r) = q.strip_prefix('<') {
-        ("<", r.trim())
-    } else {
+    let (op, rest) = parse_operator(query);
+    if !matches!(op, ">" | "<" | ">=" | "<=") {
         return None;
-    };
+    }
     // Numeric operators require a numeric value
     if !rest.is_empty() && rest.parse::<f64>().is_err() {
         return Some(format!("'{}' requires a number (got '{}')", op, rest));
@@ -157,22 +162,7 @@ fn validate_filter_query(query: &str, col_name: &str, df: &DataFrame) -> Option<
 }
 
 fn build_filter_expr(col_name: &str, query: &str) -> Expr {
-    let q = query.trim();
-    let (op, rest) = if let Some(r) = q.strip_prefix(">=") {
-        (">=", r.trim())
-    } else if let Some(r) = q.strip_prefix("<=") {
-        ("<=", r.trim())
-    } else if let Some(r) = q.strip_prefix("!=") {
-        ("!=", r.trim())
-    } else if let Some(r) = q.strip_prefix('>') {
-        (">", r.trim())
-    } else if let Some(r) = q.strip_prefix('<') {
-        ("<", r.trim())
-    } else if let Some(r) = q.strip_prefix('=') {
-        ("=", r.trim())
-    } else {
-        ("", q)
-    };
+    let (op, rest) = parse_operator(query);
 
     if !op.is_empty() {
         if let Ok(value) = rest.parse::<f64>() {
@@ -227,6 +217,7 @@ impl App {
             search_cursor: 0,
             filter_input: String::new(),
             filter_error: None,
+            sort_error: None,
             filters: Vec::new(),
             sort_column: None,
             sort_direction: SortDirection::Ascending,
@@ -305,13 +296,13 @@ impl App {
         } else {
             self.filter_error = None;
         }
-        let filtered = self
-            .df
-            .clone()
-            .lazy()
-            .filter(mask)
-            .collect()
-            .unwrap_or(self.df.clone());
+        let filtered = match self.df.clone().lazy().filter(mask).collect() {
+            Ok(df) => df,
+            Err(e) => {
+                self.filter_error = Some(format!("Filter error: {}", e));
+                self.df.clone()
+            }
+        };
 
         self.view_offset = 0;
         self.view = if let Some(sort_col) = self.sort_column {
@@ -345,66 +336,51 @@ impl App {
         let opts = SortMultipleOptions::default()
             .with_order_descending(matches!(self.sort_direction, SortDirection::Descending));
         self.view = match self.view.sort([col_name], opts) {
-            Ok(sorted) => sorted,
-            Err(_) => self.view.clone(),
+            Ok(sorted) => {
+                self.sort_error = None;
+                sorted
+            }
+            Err(e) => {
+                self.sort_error = Some(format!("Sort error: {}", e));
+                self.view.clone()
+            }
         };
         if !self.search_query.is_empty() {
             self.update_search();
         }
     }
 
+    fn compute_column_width(&self, col_idx: usize) -> u16 {
+        let header_width = self.header_label(col_idx).chars().count() as u16;
+        let max_data = self
+            .view
+            .column(&self.headers[col_idx])
+            .ok()
+            .and_then(|col| {
+                let cast = col.as_series()?.cast(&DataType::String).ok()?;
+                cast.str()
+                    .ok()?
+                    .into_iter()
+                    .flatten()
+                    .map(|s| s.chars().count())
+                    .max()
+                    .map(|n| n as u16)
+            })
+            .unwrap_or(0);
+        max_data
+            .max(header_width)
+            .clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH)
+    }
+
     pub fn autofit_selected_column(&mut self) {
         if let Some(col_idx) = self.state.selected_column() {
-            let label = self.header_label(col_idx);
-            let header_width = label.chars().count() as u16;
-            let col_name = self.headers[col_idx].clone();
-            let max_data = self
-                .view
-                .column(&col_name)
-                .ok()
-                .and_then(|col| {
-                    let cast = col.as_series()?.cast(&DataType::String).ok()?;
-                    let max = cast
-                        .str()
-                        .ok()?
-                        .into_iter()
-                        .flatten()
-                        .map(|s: &str| s.chars().count())
-                        .max()
-                        .map(|n| n as u16);
-                    max
-                })
-                .unwrap_or(0);
-            self.column_widths[col_idx] = max_data
-                .max(header_width)
-                .clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH);
+            self.column_widths[col_idx] = self.compute_column_width(col_idx);
         }
     }
 
     pub fn autofit_all_columns(&mut self) {
-        let cols: Vec<usize> = (0..self.headers.len()).collect();
-        for col_idx in cols {
-            let label = self.header_label(col_idx);
-            let header_width = label.chars().count() as u16;
-            let col_name = self.headers[col_idx].clone();
-            let max_data = self
-                .view
-                .column(&col_name)
-                .ok()
-                .and_then(|col| {
-                    let cast = col.as_series()?.cast(&DataType::String).ok()?;
-                    cast.str()
-                        .ok()?
-                        .into_iter()
-                        .flatten()
-                        .map(|s| s.chars().count())
-                        .max()
-                        .map(|n| n as u16)
-                })
-                .unwrap_or(0);
-            self.column_widths[col_idx] = max_data
-                .max(header_width)
-                .clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH);
+        for col_idx in 0..self.headers.len() {
+            self.column_widths[col_idx] = self.compute_column_width(col_idx);
         }
     }
 
