@@ -298,4 +298,72 @@ mod tests {
         assert_eq!(df.height(), 3);
         assert_eq!(df.width(), 1);
     }
+
+    // --- fixture smoke tests ---
+
+    #[test]
+    fn test_fixture_orders_csv() {
+        let df = load_dataframe("tests/fixtures/orders.csv", None).expect("should load");
+        assert_eq!(df.height(), 100);
+        assert_eq!(df.width(), 12);
+        assert!(df.column("order_id").is_ok());
+        assert!(df.column("status").is_ok());
+    }
+
+    #[test]
+    fn test_fixture_orders_tsv() {
+        let df = load_dataframe("tests/fixtures/orders.tsv", None).expect("should load");
+        assert_eq!(df.height(), 10);
+        assert_eq!(df.width(), 12);
+        assert!(df.column("order_id").is_ok());
+        assert!(df.column("status").is_ok());
+    }
+
+    #[test]
+    fn test_fixture_orders_json() {
+        let df = load_dataframe("tests/fixtures/orders.json", None).expect("should load");
+        assert_eq!(df.height(), 10);
+        assert_eq!(df.width(), 12);
+        assert!(df.column("order_id").is_ok());
+        assert!(df.column("status").is_ok());
+    }
+
+    #[test]
+    fn test_fixture_orders_ndjson() {
+        let df = load_dataframe("tests/fixtures/orders.ndjson", None).expect("should load");
+        assert_eq!(df.height(), 10);
+        assert_eq!(df.width(), 12);
+        assert!(df.column("order_id").is_ok());
+        assert!(df.column("status").is_ok());
+    }
+
+    #[test]
+    fn test_fixture_orders_parquet() {
+        let df = load_dataframe("tests/fixtures/orders.parquet", None).expect("should load");
+        assert_eq!(df.height(), 50);
+        assert_eq!(df.width(), 6);
+        assert!(df.column("id").is_ok());
+        assert!(df.column("score").is_ok());
+    }
+
+    #[test]
+    fn test_fixture_wide_csv() {
+        let df = load_dataframe("tests/fixtures/wide.csv", None).expect("should load");
+        assert_eq!(df.width(), 200);
+        assert!(df.height() > 0);
+    }
+
+    #[test]
+    fn test_fixture_unsupported_extension_errors() {
+        assert!(load_dataframe("tests/fixtures/orders.csv.bak", None).is_err());
+    }
+
+    #[test]
+    fn test_fixture_unknown_ext_with_delimiter_loads_as_csv() {
+        // copy of the TSV data but with a .dat extension — delimiter flag should save it
+        let df = load_dataframe("tests/fixtures/orders.tsv", Some(b'\t'))
+            .expect("should load with explicit delimiter");
+        assert_eq!(df.height(), 10);
+        assert_eq!(df.width(), 12);
+    }
 }
