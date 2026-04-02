@@ -135,8 +135,12 @@ pub fn run_app(
                             if let Some((value, _)) = app.unique_values_filtered.get(idx) {
                                 let filter = format!("= {}", value);
                                 let col = app.unique_values_col;
-                                app.filters.push((col, filter));
-                                app.update_filter();
+                                let already_exists =
+                                    app.filters.iter().any(|(c, q)| *c == col && q == &filter);
+                                if !already_exists {
+                                    app.filters.push((col, filter));
+                                    app.update_filter();
+                                }
                             }
                         }
                         app.mode = Mode::Normal;
@@ -234,12 +238,16 @@ fn to_normal_mode_with_filter(app: &mut App) {
     }
     app.mode = Mode::Normal;
     if !app.filter_input.is_empty() {
-        app.filters.push((
-            app.state.selected_column().unwrap_or(0),
-            app.filter_input.clone(),
-        ));
+        let col = app.state.selected_column().unwrap_or(0);
+        let already_exists = app
+            .filters
+            .iter()
+            .any(|(c, q)| *c == col && q == &app.filter_input);
+        if !already_exists {
+            app.filters.push((col, app.filter_input.clone()));
+            app.update_filter();
+        }
         app.filter_input = String::new();
-        app.update_filter();
     }
 }
 
