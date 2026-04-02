@@ -1103,6 +1103,11 @@ pub fn extract_plot_data_pub(app: &App, x_idx: usize, y_idx: usize) -> (Vec<(f64
     extract_plot_data(app, x_idx, y_idx)
 }
 
+#[cfg(test)]
+pub fn compute_histogram_pub(app: &App, y_idx: usize) -> Result<Vec<(f64, f64)>, String> {
+    compute_histogram(app, y_idx)
+}
+
 fn is_numeric_dtype(dtype: &DataType) -> bool {
     matches!(
         dtype,
@@ -1274,4 +1279,67 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         Constraint::Percentage((100 - percent_x) / 2),
     ])
     .split(vertical[1])[1]
+}
+
+#[cfg(test)]
+mod histogram_tests {
+    use super::*;
+    use crate::app::App;
+    use polars::prelude::*;
+
+    fn make_numeric_app() -> App {
+        let df = df! {
+            "val" => [1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        }
+        .unwrap();
+        App::new(df, "test.csv".to_string())
+    }
+
+    #[test]
+    fn test_compute_histogram_numeric_returns_ok() {
+        let app = make_numeric_app();
+        let result = compute_histogram_pub(&app, 0);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert!(!data.is_empty());
+        // All counts must be non-negative
+        assert!(data.iter().all(|(_, count)| *count >= 0.0));
+        // Bin centres must be within the data range
+        assert!(data.iter().all(|(x, _)| *x >= 1.0 && *x <= 10.0));
+    }
+
+    #[test]
+    fn test_compute_histogram_non_numeric_returns_err() {
+        let df = df! {
+            "name" => ["alice", "bob", "charlie"],
+        }
+        .unwrap();
+        let app = App::new(df, "test.csv".to_string());
+        let result = compute_histogram_pub(&app, 0);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("numeric"));
+    }
+
+    #[test]
+    fn test_compute_histogram_single_unique_value() {
+        // All values identical — bin_w would be ~0, special-cased to one bar
+        let df = df! {
+            "val" => [5.0f64, 5.0, 5.0],
+        }
+        .unwrap();
+        let app = App::new(df, "test.csv".to_string());
+        let result = compute_histogram_pub(&app, 0);
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.len(), 1);
+        assert_eq!(data[0], (5.0, 3.0));
+    }
+
+    #[test]
+    fn test_compute_histogram_total_count_equals_row_count() {
+        let app = make_numeric_app();
+        let data = compute_histogram_pub(&app, 0).unwrap();
+        let total: f64 = data.iter().map(|(_, c)| c).sum();
+        assert_eq!(total as usize, 10);
+    }
 }

@@ -991,3 +991,335 @@ mod plot_tests {
         assert!(x_is_categorical, "string x: should be categorical");
     }
 }
+
+#[cfg(test)]
+mod parse_operator_tests {
+    use super::*;
+
+    #[test]
+    fn test_gte() {
+        assert_eq!(parse_operator(">= 5"), (">=", "5"));
+    }
+
+    #[test]
+    fn test_lte() {
+        assert_eq!(parse_operator("<= 5"), ("<=", "5"));
+    }
+
+    #[test]
+    fn test_neq() {
+        assert_eq!(parse_operator("!= 5"), ("!=", "5"));
+    }
+
+    #[test]
+    fn test_gt() {
+        assert_eq!(parse_operator("> 5"), (">", "5"));
+    }
+
+    #[test]
+    fn test_lt() {
+        assert_eq!(parse_operator("< 5"), ("<", "5"));
+    }
+
+    #[test]
+    fn test_eq() {
+        assert_eq!(parse_operator("= 5"), ("=", "5"));
+    }
+
+    #[test]
+    fn test_no_op() {
+        assert_eq!(parse_operator("hello"), ("", "hello"));
+    }
+
+    #[test]
+    fn test_trims_leading_whitespace() {
+        assert_eq!(parse_operator("  >= 10"), (">=", "10"));
+    }
+
+    #[test]
+    fn test_trims_value_whitespace() {
+        assert_eq!(parse_operator(">  42  "), (">", "42"));
+    }
+
+    // Ensure two-char operators are not mis-parsed as one-char operators.
+    #[test]
+    fn test_gte_not_parsed_as_gt() {
+        let (op, _) = parse_operator(">= 5");
+        assert_eq!(op, ">=");
+    }
+}
+
+#[cfg(test)]
+mod incomplete_operator_tests {
+    use super::*;
+
+    #[test]
+    fn test_bare_gt_is_incomplete() {
+        assert!(is_incomplete_operator(">"));
+    }
+
+    #[test]
+    fn test_bare_gte_is_incomplete() {
+        assert!(is_incomplete_operator(">="));
+    }
+
+    #[test]
+    fn test_bare_neq_is_incomplete() {
+        assert!(is_incomplete_operator("!="));
+    }
+
+    #[test]
+    fn test_operator_with_value_is_not_incomplete() {
+        assert!(!is_incomplete_operator("> 5"));
+    }
+
+    #[test]
+    fn test_plain_text_is_not_incomplete() {
+        assert!(!is_incomplete_operator("hello"));
+    }
+
+    #[test]
+    fn test_empty_string_is_not_incomplete() {
+        assert!(!is_incomplete_operator(""));
+    }
+}
+
+#[cfg(test)]
+mod validate_filter_tests {
+    use super::*;
+
+    fn make_df() -> DataFrame {
+        df! {
+            "name" => ["Alice", "Bob"],
+            "age"  => [25i64, 30],
+        }
+        .unwrap()
+    }
+
+    #[test]
+    fn test_numeric_op_on_numeric_col_valid() {
+        assert!(validate_filter_query("> 20", "age", &make_df()).is_none());
+    }
+
+    #[test]
+    fn test_numeric_op_on_string_col_returns_error() {
+        let err = validate_filter_query("> 5", "name", &make_df());
+        assert!(err.is_some());
+        assert!(err.unwrap().contains("numeric"));
+    }
+
+    #[test]
+    fn test_numeric_op_with_non_numeric_value_returns_error() {
+        let err = validate_filter_query("> abc", "age", &make_df());
+        assert!(err.is_some());
+        assert!(err.unwrap().contains("number"));
+    }
+
+    #[test]
+    fn test_eq_op_on_string_col_is_valid() {
+        // = and != are string-compatible, so no error
+        assert!(validate_filter_query("= Alice", "name", &make_df()).is_none());
+    }
+
+    #[test]
+    fn test_substring_query_is_valid() {
+        assert!(validate_filter_query("Ali", "name", &make_df()).is_none());
+    }
+}
+
+#[cfg(test)]
+mod chained_filter_tests {
+    use super::*;
+
+    fn make_app() -> App {
+        let df = df! {
+            "dept" => ["eng", "eng", "hr"],
+            "sal"  => [100i64, 200, 150],
+        }
+        .unwrap();
+        App::new(df, "test.csv".to_string())
+    }
+
+    #[test]
+    fn test_two_filters_on_different_columns() {
+        let mut app = make_app();
+        // dept = eng AND sal > 150 → only the 200 row
+        app.filters = vec![(0, "eng".to_string()), (1, "> 150".to_string())];
+        app.update_filter();
+        assert_eq!(app.view.height(), 1);
+    }
+
+    #[test]
+    fn test_duplicate_filter_not_stacked() {
+        let mut app = make_app();
+        app.filters = vec![(0, "eng".to_string())];
+        app.update_filter();
+        let height_first = app.view.height();
+
+        // Simulate pressing Enter with the same filter again
+        let col = 0;
+        let query = "eng".to_string();
+        let already_exists = app.filters.iter().any(|(c, q)| *c == col && q == &query);
+        if !already_exists {
+            app.filters.push((col, query));
+            app.update_filter();
+        }
+
+        assert_eq!(app.view.height(), height_first);
+        assert_eq!(app.filters.len(), 1);
+    }
+
+    #[test]
+    fn test_range_filter_two_ops_same_column() {
+        let mut app = make_app();
+        // sal >= 100 AND sal <= 150 → 100, 150 rows
+        app.filters = vec![(1, ">= 100".to_string()), (1, "<= 150".to_string())];
+        app.update_filter();
+        assert_eq!(app.view.height(), 2);
+    }
+
+    #[test]
+    fn test_filter_error_set_for_numeric_op_on_string_col() {
+        let mut app = make_app();
+        app.state.select_column(Some(0)); // dept (string)
+        app.filter_input = "> 5".to_string();
+        app.update_filter();
+        assert!(app.filter_error.is_some());
+    }
+}
+
+#[cfg(test)]
+mod stats_tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_stats_values() {
+        let df = df! {
+            "val" => [10i64, 20, 30],
+        }
+        .unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+        let stats = app.compute_stats(0);
+        assert_eq!(stats.count, 3);
+        assert_eq!(stats.min, "10");
+        assert_eq!(stats.max, "30");
+        assert!((stats.mean.unwrap() - 20.0).abs() < 1e-9);
+        assert!((stats.median.unwrap() - 20.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_compute_stats_out_of_bounds_col() {
+        let df = df! { "val" => [1i64] }.unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+        // col index 99 is out of bounds — should return default without panic
+        let stats = app.compute_stats(99);
+        assert_eq!(stats.count, 0);
+    }
+}
+
+#[cfg(test)]
+mod unique_values_tests {
+    use super::*;
+
+    fn make_app() -> App {
+        let df = df! {
+            "status" => ["active", "inactive", "active", "pending"],
+        }
+        .unwrap();
+        App::new(df, "test.csv".to_string())
+    }
+
+    #[test]
+    fn test_build_unique_values_sorted_by_frequency() {
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.build_unique_values();
+        // "active" appears twice, so it should be first
+        assert_eq!(app.unique_values[0].0, "active");
+        assert_eq!(app.unique_values[0].1, 2);
+        assert_eq!(app.unique_values.len(), 3);
+    }
+
+    #[test]
+    fn test_filter_unique_values_narrows_list() {
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.build_unique_values();
+        app.unique_values_query = "act".to_string();
+        app.filter_unique_values();
+        // "active" and "inactive" both contain "act"
+        assert_eq!(app.unique_values_filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_filter_unique_values_case_insensitive() {
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.build_unique_values();
+        // "PEND" lowercases to "pend", which only matches "pending"
+        app.unique_values_query = "PEND".to_string();
+        app.filter_unique_values();
+        assert_eq!(app.unique_values_filtered.len(), 1);
+        assert_eq!(app.unique_values_filtered[0].0, "pending");
+    }
+
+    #[test]
+    fn test_filter_unique_values_empty_query_shows_all() {
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.build_unique_values();
+        app.unique_values_query = "act".to_string();
+        app.filter_unique_values();
+        app.unique_values_query = String::new();
+        app.filter_unique_values();
+        assert_eq!(app.unique_values_filtered.len(), app.unique_values.len());
+    }
+}
+
+#[cfg(test)]
+mod cycle_agg_tests {
+    use super::*;
+
+    fn make_app() -> App {
+        let df = df! {
+            "dept" => ["eng"],
+            "sal"  => [100i64],
+        }
+        .unwrap();
+        App::new(df, "test.csv".to_string())
+    }
+
+    #[test]
+    fn test_cycle_agg_progresses_through_all_variants() {
+        let mut app = make_app();
+        app.state.select_column(Some(1)); // sal — not a key col
+
+        app.cycle_groupby_agg();
+        assert_eq!(app.groupby_aggs[&1], AggFunc::Sum);
+
+        app.cycle_groupby_agg();
+        assert_eq!(app.groupby_aggs[&1], AggFunc::Mean);
+
+        app.cycle_groupby_agg();
+        assert_eq!(app.groupby_aggs[&1], AggFunc::Count);
+
+        app.cycle_groupby_agg();
+        assert_eq!(app.groupby_aggs[&1], AggFunc::Min);
+
+        app.cycle_groupby_agg();
+        assert_eq!(app.groupby_aggs[&1], AggFunc::Max);
+
+        // One more cycle removes the agg entirely
+        app.cycle_groupby_agg();
+        assert!(!app.groupby_aggs.contains_key(&1));
+    }
+
+    #[test]
+    fn test_cycle_agg_no_op_on_key_column() {
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.toggle_groupby_key(); // col 0 is now a key
+        app.cycle_groupby_agg(); // should be a no-op
+        assert!(!app.groupby_aggs.contains_key(&0));
+    }
+}
