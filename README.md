@@ -42,13 +42,19 @@ cargo install --git https://github.com/SpollaL/datasight
 Or clone and run locally:
 
 ```
-cargo run -- <path-to-file.csv>
-cargo run -- <path-to-file.tsv>
-cargo run -- <path-to-file.parquet>
-cargo run -- <path-to-file.json>
-cargo run -- <path-to-file.ndjson>
-cargo run -- -d '|' <path-to-file.csv>   # pipe-separated
+cargo run -- tests/fixtures/orders.csv
+cargo run -- tests/fixtures/orders.tsv
+cargo run -- tests/fixtures/orders.parquet
+cargo run -- tests/fixtures/orders.json
+cargo run -- tests/fixtures/orders.ndjson
+cargo run -- -d '|' <path-to-file.psv>   # pipe-separated
 cargo run -- -d ';' <path-to-file.csv>   # semicolon-separated
+```
+
+Sample fixtures for all supported formats are in `tests/fixtures/`. To regenerate `orders.parquet`:
+
+```
+cargo run --example create_test_parquet
 ```
 
 ### Pipe from stdin
