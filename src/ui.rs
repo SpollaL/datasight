@@ -179,7 +179,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
 
     if app.show_stats {
         let col = app.state.selected_column().unwrap_or(0);
-        let stats = app.compute_stats(col);
+        let stats = app.get_or_compute_stats(col);
         let area = centered_rect(40, 40, frame.area());
         frame.render_widget(Clear, area);
         let content = format!(
@@ -1108,25 +1108,9 @@ pub fn compute_histogram_pub(app: &App, y_idx: usize) -> Result<Vec<(f64, f64)>,
     compute_histogram(app, y_idx)
 }
 
-fn is_numeric_dtype(dtype: &DataType) -> bool {
-    matches!(
-        dtype,
-        DataType::Float32
-            | DataType::Float64
-            | DataType::Int8
-            | DataType::Int16
-            | DataType::Int32
-            | DataType::Int64
-            | DataType::UInt8
-            | DataType::UInt16
-            | DataType::UInt32
-            | DataType::UInt64
-    )
-}
-
 fn series_to_f64(col: &polars::prelude::Column) -> Option<polars::prelude::Series> {
     let s = col.as_series()?;
-    if is_numeric_dtype(s.dtype()) {
+    if s.dtype().is_primitive_numeric() {
         s.cast(&DataType::Float64).ok()
     } else {
         None

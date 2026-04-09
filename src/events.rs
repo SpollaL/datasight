@@ -201,6 +201,7 @@ fn enter_search_mode(app: &mut App) {
 fn enter_filter_mode(app: &mut App) {
     app.mode = Mode::Filter;
     app.filter_input = String::new();
+    app.filter_col = app.state.selected_column();
 }
 
 fn push_char_to_search_query(app: &mut App, c: char) {
@@ -238,7 +239,7 @@ fn to_normal_mode_with_filter(app: &mut App) {
     }
     app.mode = Mode::Normal;
     if !app.filter_input.is_empty() {
-        let col = app.state.selected_column().unwrap_or(0);
+        let col = app.filter_col.unwrap_or(0);
         let already_exists = app
             .filters
             .iter()

@@ -51,7 +51,7 @@ pub enum AggFunc {
     Max,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ColumnStats {
     pub count: usize,
     pub min: String,
@@ -99,6 +99,8 @@ pub struct App {
     pub unique_values_state: TableState,
     pub unique_values_col: usize,
     pub unique_values_truncated: bool,
+    pub filter_col: Option<usize>,
+    pub cached_stats: Option<(usize, ColumnStats)>,
 }
 
 /// Strips a leading comparison operator from `query`.
@@ -176,12 +178,19 @@ fn build_filter_expr(col_name: &str, query: &str) -> Expr {
             };
         }
         // Non-numeric value with = / != : exact string match.
+        // "(null)" is a sentinel for actual null values (not the string "null").
         if op == "=" {
+            if rest == "(null)" {
+                return col(col_name).is_null();
+            }
             return col(col_name)
                 .cast(DataType::String)
                 .eq(lit(rest.to_string()));
         }
         if op == "!=" {
+            if rest == "(null)" {
+                return col(col_name).is_not_null();
+            }
             return col(col_name)
                 .cast(DataType::String)
                 .neq(lit(rest.to_string()));
@@ -242,6 +251,8 @@ impl App {
             unique_values_state: TableState::default(),
             unique_values_col: 0,
             unique_values_truncated: false,
+            filter_col: None,
+            cached_stats: None,
         };
         if !app.df.is_empty() {
             app.state.select(Some(0));
@@ -282,6 +293,7 @@ impl App {
     }
 
     pub fn update_filter(&mut self) {
+        self.cached_stats = None;
         let mut mask = lit(true);
         for (colidx, query) in &self.filters {
             let col_name = &self.headers[*colidx];
@@ -322,6 +334,7 @@ impl App {
     }
 
     pub fn sort_by_column(&mut self) {
+        self.cached_stats = None;
         let current_column = self.state.selected_column().unwrap_or(0);
         if self.sort_column == Some(current_column) {
             self.sort_direction = match self.sort_direction {
@@ -444,6 +457,17 @@ impl App {
         }
     }
 
+    pub fn get_or_compute_stats(&mut self, col: usize) -> ColumnStats {
+        if let Some((cached_col, ref stats)) = self.cached_stats {
+            if cached_col == col {
+                return stats.clone();
+            }
+        }
+        let stats = self.compute_stats(col);
+        self.cached_stats = Some((col, stats.clone()));
+        stats
+    }
+
     pub fn toggle_groupby_key(&mut self) {
         let col = self.state.selected_column().unwrap_or(0);
         if let Some(pos) = self.groupby_keys.iter().position(|&k| k == col) {
@@ -477,6 +501,7 @@ impl App {
         };
     }
     pub fn apply_groupby(&mut self) {
+        self.cached_stats = None;
         if self.groupby_keys.is_empty() || self.groupby_aggs.is_empty() {
             return;
         }
@@ -543,11 +568,16 @@ impl App {
                 .clone();
             let str_s = s.cast(&DataType::String).ok()?;
             let ca = str_s.str().ok()?.clone();
-            let mut map: HashMap<String, usize> = HashMap::new();
+            // Use Option<String> keys so actual nulls and the string "null" are
+            // counted separately. None is displayed as "(null)" below.
+            let mut map: HashMap<Option<String>, usize> = HashMap::new();
             for v in ca.into_iter() {
-                *map.entry(v.unwrap_or("null").to_string()).or_insert(0) += 1;
+                *map.entry(v.map(|s| s.to_string())).or_insert(0) += 1;
             }
-            let mut pairs: Vec<(String, usize)> = map.into_iter().collect();
+            let mut pairs: Vec<(String, usize)> = map
+                .into_iter()
+                .map(|(k, v)| (k.unwrap_or_else(|| "(null)".to_string()), v))
+                .collect();
             pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
             let truncated = pairs.len() > MAX_UNIQUE;
             pairs.truncate(MAX_UNIQUE);
@@ -631,6 +661,10 @@ impl App {
     }
 
     pub fn clear_groupby(&mut self) {
+        if !self.groupby_active {
+            return;
+        }
+        self.cached_stats = None;
         self.view_offset = 0;
         self.headers = self.saved_headers.clone();
         self.column_widths = self.saved_column_widths.clone();
