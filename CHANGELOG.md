@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-04-09
+
+### Added
+- TSV support and custom delimiter flag (`-d`)
+- Stdin/pipe support with automatic format detection (CSV, JSON, NDJSON)
+- JSON (`[{...}]`) and NDJSON/JSON Lines (`.ndjson`, `.jsonl`) file formats
+- Context-aware Zellij-style shortcut bar
+
+### Fixed
+- Surface silent errors and prevent duplicate filter stacking
+- Treat unknown extensions as CSV when `-d` delimiter is provided
+
+### Changed
+- CI matrix expanded to macOS and Windows
+- Expanded test coverage from 29 to 66 tests
+
 ## [0.1.0] - 2026-03-23
 
 ### Added

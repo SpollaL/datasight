@@ -36,7 +36,7 @@ Download the latest binary for your platform from the [GitHub Releases](https://
 Requires Rust 1.75 or higher.
 
 ```
-cargo install --git https://github.com/SpollaL/datasight
+cargo install datasight
 ```
 
 Or clone and run locally:

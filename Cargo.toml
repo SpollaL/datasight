@@ -8,6 +8,7 @@ repository = "https://github.com/SpollaL/datasight"
 rust-version = "1.75"
 keywords = ["csv", "parquet", "tui", "terminal", "viewer"]
 categories = ["command-line-utilities", "visualization"]
+exclude = [".github", "demo.tape", "tests/fixtures/*.parquet", "tests/fixtures/*.ndjson"]
 
 [dependencies]
 crossterm = "0.29.0"
