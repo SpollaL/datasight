@@ -178,7 +178,11 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     frame.render_widget(Paragraph::new(shortcut_bar(app, m)), chunks[2]);
 
     if app.show_stats {
-        let col = app.state.selected_column().unwrap_or(0);
+        let col = app
+            .state
+            .selected_column()
+            .unwrap_or(0)
+            .min(app.headers.len().saturating_sub(1));
         let stats = app.get_or_compute_stats(col);
         let area = centered_rect(40, 40, frame.area());
         frame.render_widget(Clear, area);
@@ -523,9 +527,13 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     format!(
                         " {} | Row {}/{} | Col {}/{} | {} ",
                         filter_summary,
-                        app.state.selected().map_or(0, |i| i + 1),
+                        app.state
+                            .selected()
+                            .map_or(0, |i| i.saturating_add(1).min(app.view.height())),
                         app.view.height(),
-                        app.state.selected_column().map_or(0, |i| i + 1),
+                        app.state
+                            .selected_column()
+                            .map_or(0, |i| i.saturating_add(1).min(app.headers.len())),
                         app.headers.len(),
                         app.file_path
                     ),
@@ -537,9 +545,13 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                 (
                     format!(
                         " Row {}/{} | Col {}/{} | {}  ? help ",
-                        app.state.selected().map_or(0, |i| i + 1),
+                        app.state
+                            .selected()
+                            .map_or(0, |i| i.saturating_add(1).min(app.view.height())),
                         app.view.height(),
-                        app.state.selected_column().map_or(0, |i| i + 1),
+                        app.state
+                            .selected_column()
+                            .map_or(0, |i| i.saturating_add(1).min(app.headers.len())),
                         app.headers.len(),
                         app.file_path
                     ),

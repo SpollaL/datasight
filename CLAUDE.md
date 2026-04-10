@@ -23,6 +23,20 @@ cargo build --profile dist           # release/distribution build (thin LTO)
 vhs demo.tape                        # regenerate .github/assets/demo.gif (requires vhs + ttyd)
 ```
 
+## Pre-release QA
+
+Before bumping the version or tagging a release, run the full TUI QA suite:
+
+```bash
+cargo build && bash qa.sh
+```
+
+`qa.sh` creates a tmux session named `qa` (or reuses one if it exists) and drives the binary
+through all 7 modes, every keybinding, all file formats, edge cases (0-row views, wide.csv),
+and the null fixture (`tests/fixtures/orders_nulls.csv`).
+
+A release should only be tagged after `qa.sh` exits 0 **and** `cargo test` passes.
+
 ## Architecture
 
 The entire application is four files under `src/`:

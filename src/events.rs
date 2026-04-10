@@ -36,12 +36,12 @@ pub fn run_app(
                     event::KeyCode::Char('q') => app.should_quit = true,
                     event::KeyCode::Down => app.state.select_next(),
                     event::KeyCode::Up => app.state.select_previous(),
-                    event::KeyCode::Left => app.state.select_previous_column(),
-                    event::KeyCode::Right => app.state.select_next_column(),
+                    event::KeyCode::Left => app.select_previous_column(),
+                    event::KeyCode::Right => app.select_next_column(),
                     event::KeyCode::Char('j') => app.state.select_next(),
                     event::KeyCode::Char('k') => app.state.select_previous(),
-                    event::KeyCode::Char('h') => app.state.select_previous_column(),
-                    event::KeyCode::Char('l') => app.state.select_next_column(),
+                    event::KeyCode::Char('h') => app.select_previous_column(),
+                    event::KeyCode::Char('l') => app.select_next_column(),
                     event::KeyCode::Char('g') => app.state.select_first(),
                     event::KeyCode::Char('G') => app.state.select_last(),
                     event::KeyCode::PageDown => app.state.scroll_down_by(PAGE_SCROLL_AMOUNT),
@@ -91,11 +91,9 @@ pub fn run_app(
                 },
                 Mode::PlotPickX => match key.code {
                     event::KeyCode::Left | event::KeyCode::Char('h') => {
-                        app.state.select_previous_column()
+                        app.select_previous_column()
                     }
-                    event::KeyCode::Right | event::KeyCode::Char('l') => {
-                        app.state.select_next_column()
-                    }
+                    event::KeyCode::Right | event::KeyCode::Char('l') => app.select_next_column(),
                     event::KeyCode::Enter => {
                         app.plot_x_col = app.state.selected_column();
                         app.mode = Mode::Plot;

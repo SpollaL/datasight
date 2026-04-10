@@ -300,7 +300,11 @@ impl App {
             mask = mask.and(build_filter_expr(col_name, query));
         }
         if !self.filter_input.is_empty() && !is_incomplete_operator(&self.filter_input) {
-            let col_name = self.headers[self.state.selected_column().unwrap_or(0)].clone();
+            let col_idx = self
+                .filter_col
+                .unwrap_or_else(|| self.state.selected_column().unwrap_or(0))
+                .min(self.headers.len().saturating_sub(1));
+            let col_name = self.headers[col_idx].clone();
             self.filter_error = validate_filter_query(&self.filter_input, &col_name, &self.df);
             if self.filter_error.is_none() {
                 mask = mask.and(build_filter_expr(&col_name, &self.filter_input));
@@ -383,6 +387,20 @@ impl App {
         max_data
             .max(header_width)
             .clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH)
+    }
+
+    pub fn select_next_column(&mut self) {
+        let max = self.headers.len().saturating_sub(1);
+        let next = self.state.selected_column().map_or(0, |c| (c + 1).min(max));
+        self.state.select_column(Some(next));
+    }
+
+    pub fn select_previous_column(&mut self) {
+        let prev = self
+            .state
+            .selected_column()
+            .map_or(0, |c| c.saturating_sub(1));
+        self.state.select_column(Some(prev));
     }
 
     pub fn autofit_selected_column(&mut self) {
@@ -1272,6 +1290,48 @@ mod unique_values_tests {
         assert_eq!(app.unique_values[0].0, "active");
         assert_eq!(app.unique_values[0].1, 2);
         assert_eq!(app.unique_values.len(), 3);
+    }
+
+    #[test]
+    fn test_build_unique_values_null_shown_as_null_label() {
+        use polars::prelude::*;
+        let s = Series::new(
+            "name".into(),
+            &[Some("Alice"), None, Some("Alice"), None, None],
+        );
+        let df = DataFrame::new(vec![s.into()]).unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+        app.state.select_column(Some(0));
+        app.build_unique_values();
+        // nulls (3 of them) should be first (highest count)
+        assert_eq!(app.unique_values[0].1, 3);
+        assert_eq!(app.unique_values[0].0, "(null)");
+        assert_eq!(app.unique_values[1].0, "Alice");
+        assert_eq!(app.unique_values[1].1, 2);
+    }
+
+    #[test]
+    fn test_build_unique_values_null_from_csv_fixture() {
+        // Verify that null CSV cells round-trip through build_unique_values as "(null)"
+        use polars::prelude::*;
+        let df = CsvReadOptions::default()
+            .with_infer_schema_length(Some(100))
+            .try_into_reader_with_file_path(Some("tests/fixtures/orders_nulls.csv".into()))
+            .unwrap()
+            .finish()
+            .unwrap();
+        let mut app = App::new(df, "orders_nulls.csv".to_string());
+        // customer_name is col index 3
+        app.state.select_column(Some(3));
+        app.build_unique_values();
+        // The null entries should appear as "(null)"
+        let null_entry = app.unique_values.iter().find(|(v, _)| v == "(null)");
+        assert!(
+            null_entry.is_some(),
+            "Expected '(null)' in unique values, got: {:?}",
+            app.unique_values.iter().take(5).collect::<Vec<_>>()
+        );
+        assert_eq!(null_entry.unwrap().1, 3);
     }
 
     #[test]

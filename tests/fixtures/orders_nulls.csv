@@ -1,0 +1,101 @@
+order_id,order_date,customer_id,customer_name,region,product,category,quantity,unit_price,total_amount,payment_method,status
+1001,2025-01-03,C001,Alice Johnson,North,Laptop,Electronics,1,1200.00,1200.00,Credit Card,Completed
+1002,2025-01-04,C002,Bob Smith,South,Headphones,Electronics,2,150.00,,PayPal,Completed
+1003,2025-01-05,C003,,East,Desk Chair,Furniture,1,350.00,350.00,Credit Card,Pending
+1004,2025-01-07,C001,Alice Johnson,North,Monitor,Electronics,2,400.00,800.00,Credit Card,Completed
+1005,2025-01-08,C004,Diana Prince,West,Notebook,Stationery,5,5.00,25.00,Cash,Completed
+1006,2025-01-10,C005,,South,Smartphone,Electronics,1,900.00,900.00,Credit Card,Cancelled
+1007,2025-01-11,C006,Fiona Gallagher,East,Bookshelf,Furniture,1,200.00,200.00,Debit Card,Completed
+1008,2025-01-13,C002,Bob Smith,South,Mouse,Electronics,3,25.00,,PayPal,Completed
+1009,2025-01-15,C007,,North,Pen Pack,Stationery,10,2.50,25.00,Cash,Completed
+1010,2025-01-17,C008,Hannah Lee,West,Tablet,Electronics,1,600.00,600.00,Credit Card,Pending
+1011,2025-01-18,C009,Ian Wright,East,Office Desk,Furniture,1,750.00,750.00,Bank Transfer,Completed
+1012,2025-01-20,C003,Charlie Brown,East,Lamp,Furniture,2,45.00,90.00,Credit Card,Completed
+1013,2025-01-21,C010,Julia Roberts,South,Backpack,Accessories,1,80.00,80.00,Debit Card,Completed
+1014,2025-01-22,C004,Diana Prince,West,Water Bottle,Accessories,4,15.00,60.00,Cash,Completed
+1015,2025-01-24,C011,Kevin Hart,North,Keyboard,Electronics,1,120.00,120.00,Credit Card,Completed
+1016,2025-01-25,C012,Linda Green,South,Notebook,Stationery,3,5.00,15.00,PayPal,Completed
+1017,2025-01-26,C013,Michael Scott,East,Paper Ream,Stationery,6,7.50,45.00,Credit Card,Completed
+1018,2025-01-27,C014,Nina Simone,West,Desk Chair,Furniture,2,350.00,700.00,Bank Transfer,Pending
+1019,2025-01-28,C015,Oscar Wilde,North,Smartwatch,Electronics,1,250.00,250.00,Credit Card,Completed
+1020,2025-01-30,C016,Paula Abdul,South,Monitor,Electronics,1,400.00,400.00,Debit Card,Completed
+1021,2025-02-01,C017,Quentin Blake,East,Webcam,Electronics,1,85.00,85.00,Credit Card,Completed
+1022,2025-02-02,C018,Rachel Adams,North,Standing Desk,Furniture,1,950.00,950.00,Bank Transfer,Completed
+1023,2025-02-03,C019,Sam Wilson,West,USB Hub,Electronics,2,35.00,70.00,PayPal,Completed
+1024,2025-02-05,C020,Tina Fey,South,Whiteboard,Furniture,1,120.00,120.00,Credit Card,Pending
+1025,2025-02-06,C001,Alice Johnson,North,Webcam,Electronics,1,85.00,85.00,Credit Card,Completed
+1026,2025-02-07,C021,Uma Thurman,East,Stapler,Stationery,3,12.00,36.00,Cash,Completed
+1027,2025-02-09,C022,Victor Hugo,South,Laptop,Electronics,1,1200.00,1200.00,Credit Card,Completed
+1028,2025-02-10,C023,Wendy Darling,West,Headphones,Electronics,1,150.00,150.00,Debit Card,Completed
+1029,2025-02-12,C024,Xavier Stone,North,Filing Cabinet,Furniture,1,280.00,280.00,Bank Transfer,Completed
+1030,2025-02-13,C025,Yara Shahidi,East,Marker Set,Stationery,4,8.00,32.00,Cash,Completed
+1031,2025-02-15,C002,Bob Smith,South,Keyboard,Electronics,1,120.00,120.00,PayPal,Completed
+1032,2025-02-16,C026,Zack Morris,West,Desk Lamp,Furniture,2,55.00,110.00,Credit Card,Completed
+1033,2025-02-18,C027,Amy Santiago,North,Smartphone,Electronics,1,900.00,900.00,Credit Card,Completed
+1034,2025-02-19,C028,Bruce Wayne,East,Office Chair,Furniture,1,450.00,450.00,Bank Transfer,Pending
+1035,2025-02-20,C029,Clara Oswald,South,Tablet,Electronics,2,600.00,1200.00,Credit Card,Completed
+1036,2025-02-22,C030,Derek Hale,West,Backpack,Accessories,1,80.00,80.00,Debit Card,Completed
+1037,2025-02-23,C003,Charlie Brown,East,Pen Pack,Stationery,5,2.50,12.50,Cash,Completed
+1038,2025-02-25,C031,Elena Fisher,North,Monitor,Electronics,1,400.00,400.00,Credit Card,Completed
+1039,2025-02-26,C032,Frank Castle,South,Standing Desk,Furniture,1,950.00,950.00,Bank Transfer,Cancelled
+1040,2025-02-28,C033,Grace Hopper,East,Laptop,Electronics,1,1200.00,1200.00,Credit Card,Completed
+1041,2025-03-01,C034,Henry Jones,West,Mouse,Electronics,2,25.00,50.00,PayPal,Completed
+1042,2025-03-03,C035,Iris West,North,Notebook,Stationery,8,5.00,40.00,Cash,Completed
+1043,2025-03-04,C004,Diana Prince,West,Smartwatch,Electronics,1,250.00,250.00,Credit Card,Completed
+1044,2025-03-06,C036,Jake Peralta,South,Bookshelf,Furniture,1,200.00,200.00,Debit Card,Completed
+1045,2025-03-07,C037,Karen Page,East,Water Bottle,Accessories,3,15.00,45.00,Cash,Completed
+1046,2025-03-09,C038,Leo Messi,North,Headphones,Electronics,1,150.00,150.00,Credit Card,Pending
+1047,2025-03-10,C039,Maya Angelou,South,Desk Chair,Furniture,1,350.00,350.00,Bank Transfer,Completed
+1048,2025-03-12,C040,Nate Archibald,West,USB Hub,Electronics,3,35.00,105.00,PayPal,Completed
+1049,2025-03-13,C005,Ethan Hunt,South,Tablet,Electronics,1,600.00,600.00,Credit Card,Completed
+1050,2025-03-15,C041,Olivia Pope,East,Paper Ream,Stationery,10,7.50,75.00,Credit Card,Completed
+1051,2025-03-16,C042,Peter Parker,North,Webcam,Electronics,2,85.00,170.00,Debit Card,Completed
+1052,2025-03-18,C043,Quinn Fabray,South,Lamp,Furniture,1,45.00,45.00,Cash,Completed
+1053,2025-03-19,C044,Rosa Diaz,West,Smartphone,Electronics,1,900.00,900.00,Credit Card,Completed
+1054,2025-03-21,C006,Fiona Gallagher,East,Keyboard,Electronics,1,120.00,120.00,Credit Card,Completed
+1055,2025-03-22,C045,Steve Rogers,North,Office Desk,Furniture,1,750.00,750.00,Bank Transfer,Completed
+1056,2025-03-24,C046,Tara King,South,Backpack,Accessories,2,80.00,160.00,PayPal,Cancelled
+1057,2025-03-25,C047,Ulysses Grant,East,Marker Set,Stationery,6,8.00,48.00,Cash,Completed
+1058,2025-03-27,C048,Violet Parr,West,Monitor,Electronics,1,400.00,400.00,Credit Card,Pending
+1059,2025-03-28,C007,George Martin,North,Laptop,Electronics,1,1200.00,1200.00,Credit Card,Completed
+1060,2025-03-30,C049,Walter White,South,Filing Cabinet,Furniture,1,280.00,280.00,Bank Transfer,Completed
+1061,2025-04-01,C050,Xena Warrior,East,Stapler,Stationery,2,12.00,24.00,Cash,Completed
+1062,2025-04-02,C008,Hannah Lee,West,Headphones,Electronics,2,150.00,300.00,Credit Card,Completed
+1063,2025-04-04,C051,Yuri Gagarin,North,Desk Lamp,Furniture,1,55.00,55.00,Debit Card,Completed
+1064,2025-04-05,C052,Zelda Fitzgerald,South,Pen Pack,Stationery,10,2.50,25.00,Cash,Completed
+1065,2025-04-07,C009,Ian Wright,East,Smartwatch,Electronics,1,250.00,250.00,Credit Card,Completed
+1066,2025-04-08,C053,Aaron Burr,West,Standing Desk,Furniture,1,950.00,950.00,Bank Transfer,Completed
+1067,2025-04-10,C054,Betty Cooper,North,Mouse,Electronics,4,25.00,100.00,PayPal,Completed
+1068,2025-04-11,C010,Julia Roberts,South,Whiteboard,Furniture,1,120.00,120.00,Credit Card,Pending
+1069,2025-04-13,C055,Carl Sagan,East,Tablet,Electronics,1,600.00,600.00,Credit Card,Completed
+1070,2025-04-14,C056,Donna Noble,West,Notebook,Stationery,6,5.00,30.00,Cash,Completed
+1071,2025-04-16,C011,Kevin Hart,North,Smartphone,Electronics,1,900.00,900.00,Credit Card,Completed
+1072,2025-04-17,C057,Edward Elric,South,Office Chair,Furniture,1,450.00,450.00,Bank Transfer,Completed
+1073,2025-04-19,C058,Frida Kahlo,East,USB Hub,Electronics,1,35.00,35.00,Debit Card,Completed
+1074,2025-04-20,C012,Linda Green,South,Water Bottle,Accessories,5,15.00,75.00,Cash,Completed
+1075,2025-04-22,C059,Gordon Ramsay,West,Laptop,Electronics,1,1200.00,1200.00,Credit Card,Completed
+1076,2025-04-23,C060,Holly Short,North,Bookshelf,Furniture,2,200.00,400.00,Credit Card,Cancelled
+1077,2025-04-25,C013,Michael Scott,East,Webcam,Electronics,1,85.00,85.00,PayPal,Completed
+1078,2025-04-26,C061,Isaac Newton,South,Paper Ream,Stationery,8,7.50,60.00,Cash,Completed
+1079,2025-04-28,C062,Jean Grey,West,Keyboard,Electronics,1,120.00,120.00,Credit Card,Pending
+1080,2025-04-29,C014,Nina Simone,West,Monitor,Electronics,2,400.00,800.00,Bank Transfer,Completed
+1081,2025-05-01,C063,Karl Marx,North,Desk Chair,Furniture,1,350.00,350.00,Credit Card,Completed
+1082,2025-05-02,C064,Lara Croft,East,Headphones,Electronics,1,150.00,150.00,Debit Card,Completed
+1083,2025-05-04,C015,Oscar Wilde,North,Backpack,Accessories,1,80.00,80.00,Cash,Completed
+1084,2025-05-05,C065,Maria Hill,South,Lamp,Furniture,3,45.00,135.00,Credit Card,Completed
+1085,2025-05-07,C066,Nathan Drake,West,Tablet,Electronics,1,600.00,600.00,Credit Card,Completed
+1086,2025-05-08,C016,Paula Abdul,South,Marker Set,Stationery,2,8.00,16.00,PayPal,Completed
+1087,2025-05-10,C067,Ororo Munroe,East,Standing Desk,Furniture,1,950.00,950.00,Bank Transfer,Pending
+1088,2025-05-11,C068,Patrick Star,North,Mouse,Electronics,5,25.00,125.00,Cash,Completed
+1089,2025-05-13,C069,Quinn Hughes,South,Smartphone,Electronics,1,900.00,900.00,Credit Card,Completed
+1090,2025-05-14,C070,Rita Moreno,West,Filing Cabinet,Furniture,1,280.00,280.00,Debit Card,Completed
+1091,2025-05-16,C017,Quentin Blake,East,Notebook,Stationery,12,5.00,60.00,Cash,Completed
+1092,2025-05-17,C071,Scott Lang,North,Office Desk,Furniture,1,750.00,750.00,Bank Transfer,Completed
+1093,2025-05-19,C072,Teresa Lisbon,South,Webcam,Electronics,2,85.00,170.00,Credit Card,Cancelled
+1094,2025-05-20,C018,Rachel Adams,North,Smartwatch,Electronics,1,250.00,250.00,Credit Card,Completed
+1095,2025-05-22,C073,Ursula Buffay,East,Desk Lamp,Furniture,1,55.00,55.00,Cash,Completed
+1096,2025-05-23,C074,Vince Carter,West,Laptop,Electronics,1,1200.00,1200.00,Credit Card,Completed
+1097,2025-05-25,C019,Sam Wilson,West,Stapler,Stationery,4,12.00,48.00,PayPal,Completed
+1098,2025-05-26,C075,Wanda Maximoff,North,Headphones,Electronics,1,150.00,150.00,Credit Card,Pending
+1099,2025-05-28,C020,Tina Fey,South,Office Chair,Furniture,1,450.00,450.00,Bank Transfer,Completed
+1100,2025-05-30,C076,Yusuf Islam,East,Monitor,Electronics,1,400.00,400.00,Credit Card,Completed
