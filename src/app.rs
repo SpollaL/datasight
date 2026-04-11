@@ -1,3 +1,4 @@
+use crate::config;
 use polars::prelude::*;
 use ratatui::widgets::TableState;
 use std::collections::HashMap;
@@ -13,10 +14,6 @@ pub struct ColumnProfile {
     pub mean: Option<f64>,
     pub median: Option<f64>,
 }
-
-const DEFAULT_COLUMN_WIDTH: u16 = 15;
-const MIN_COLUMN_WIDTH: u16 = 6;
-const MAX_COLUMN_WIDTH: u16 = 40;
 
 #[derive(Debug)]
 pub enum Mode {
@@ -272,7 +269,7 @@ impl App {
             state: TableState::default(),
             should_quit: false,
             file_path,
-            column_widths: vec![DEFAULT_COLUMN_WIDTH; column_count],
+            column_widths: vec![config::DEFAULT_COLUMN_WIDTH; column_count],
             mode: Mode::Normal,
             show_stats: false,
             show_help: false,
@@ -418,7 +415,7 @@ impl App {
             .unwrap_or(0);
         max_data
             .max(header_width)
-            .clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH)
+            .clamp(config::MIN_COLUMN_WIDTH, config::MAX_COLUMN_WIDTH)
     }
 
     pub fn select_next_row(&mut self) {
@@ -632,7 +629,7 @@ impl App {
                 .iter()
                 .map(|s| s.to_string())
                 .collect();
-            self.column_widths = vec![DEFAULT_COLUMN_WIDTH; df.width()];
+            self.column_widths = vec![config::DEFAULT_COLUMN_WIDTH; df.width()];
             self.sort.column = None;
             self.search.results = Vec::new();
             self.search.cursor = 0;
@@ -644,7 +641,6 @@ impl App {
     }
 
     pub fn build_unique_values(&mut self) {
-        const MAX_UNIQUE: usize = 500;
         let col_idx = self.state.selected_column().unwrap_or(0);
         self.unique_values.col = col_idx;
         self.unique_values.query = String::new();
@@ -669,8 +665,8 @@ impl App {
                 .map(|(k, v)| (k.unwrap_or_else(|| "(null)".to_string()), v))
                 .collect();
             pairs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-            let truncated = pairs.len() > MAX_UNIQUE;
-            pairs.truncate(MAX_UNIQUE);
+            let truncated = pairs.len() > config::MAX_UNIQUE;
+            pairs.truncate(config::MAX_UNIQUE);
             self.unique_values.truncated = truncated;
             Some(pairs)
         })()
@@ -923,7 +919,7 @@ mod tests {
         app.autofit_all_columns();
         // "name" col: max("Alice"=5, "Bob"=3, "Charlie"=7) = 7
         assert_eq!(app.column_widths[0], 7);
-        // "age" col: max("30"=2, "25"=2, "35"=2) = 3, header "age" = 3 → clamped to MIN_COLUMN_WIDTH=6
+        // "age" col: max("30"=2, "25"=2, "35"=2) = 3, header "age" = 3 → clamped to config::MIN_COLUMN_WIDTH=6
         assert_eq!(app.column_widths[1], 6);
     }
 

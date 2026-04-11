@@ -1,4 +1,5 @@
 use crate::app::{AggFunc, App, ColumnProfile, Mode, PlotType};
+use crate::config;
 use catppuccin::PALETTE;
 use polars::prelude::{DataType, Series};
 use ratatui::layout::{Constraint, Layout, Position, Rect};
@@ -9,9 +10,6 @@ use ratatui::widgets::{
     Axis, Block, BorderType, Borders, Cell, Chart, Clear, Dataset, GraphType, Paragraph, Row, Table,
 };
 use ratatui::Frame;
-
-const Y_AXIS_PADDING: f64 = 0.05;
-const CHART_BORDER_WIDTH: u16 = 1;
 
 fn c(color: catppuccin::Color) -> Color {
     Color::Rgb(color.rgb.r, color.rgb.g, color.rgb.b)
@@ -944,7 +942,7 @@ fn render_histogram(
     let x_min = data.first().map(|p| p.0).unwrap_or(0.0);
     let x_max = data.last().map(|p| p.0).unwrap_or(1.0);
     let y_max = data.iter().map(|p| p.1).fold(0.0f64, f64::max);
-    let y_pad = y_max * Y_AXIS_PADDING;
+    let y_pad = y_max * config::Y_AXIS_PADDING;
 
     // Three evenly-spaced X labels showing the data range.
     let x_mid = (x_min + x_max) / 2.0;
@@ -1063,7 +1061,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     let y_min = data.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
     let y_max = data.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
 
-    let y_pad = (y_max - y_min).abs() * Y_AXIS_PADDING;
+    let y_pad = (y_max - y_min).abs() * config::Y_AXIS_PADDING;
     let y_bounds = [y_min - y_pad, y_max + y_pad];
 
     let dataset = Dataset::default()
@@ -1179,7 +1177,9 @@ fn render_vertical_x_labels(
     // The plot's x range covers the inner chart width minus the left border.
     // No explicit y-axis labels → inner area starts right after the left border.
     let plot_x = chart_area.x + 1;
-    let plot_w = chart_area.width.saturating_sub(CHART_BORDER_WIDTH * 2);
+    let plot_w = chart_area
+        .width
+        .saturating_sub(config::CHART_BORDER_WIDTH * 2);
     if plot_w == 0 {
         return;
     }

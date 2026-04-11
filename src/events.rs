@@ -1,8 +1,7 @@
 use crate::app::{App, Mode, PlotType};
+use crate::config;
 use crate::ui::ui;
 use crossterm::event;
-
-const PAGE_SCROLL_AMOUNT: u16 = 20;
 
 pub fn run_app(
     terminal: &mut ratatui::DefaultTerminal,
@@ -21,10 +20,10 @@ pub fn run_app(
                         app.help_scroll = app.help_scroll.saturating_sub(1)
                     }
                     event::KeyCode::PageDown => {
-                        app.help_scroll = app.help_scroll.saturating_add(PAGE_SCROLL_AMOUNT)
+                        app.help_scroll = app.help_scroll.saturating_add(config::PAGE_SCROLL_AMOUNT)
                     }
                     event::KeyCode::PageUp => {
-                        app.help_scroll = app.help_scroll.saturating_sub(PAGE_SCROLL_AMOUNT)
+                        app.help_scroll = app.help_scroll.saturating_sub(config::PAGE_SCROLL_AMOUNT)
                     }
                     event::KeyCode::Char('?') | event::KeyCode::Esc => {
                         app.show_help = false;
@@ -44,8 +43,8 @@ pub fn run_app(
                     event::KeyCode::Char('l') => app.select_next_column(),
                     event::KeyCode::Char('g') => app.select_first_row(),
                     event::KeyCode::Char('G') => app.select_last_row(),
-                    event::KeyCode::PageDown => app.scroll_down_rows(PAGE_SCROLL_AMOUNT),
-                    event::KeyCode::PageUp => app.scroll_up_rows(PAGE_SCROLL_AMOUNT),
+                    event::KeyCode::PageDown => app.scroll_down_rows(config::PAGE_SCROLL_AMOUNT),
+                    event::KeyCode::PageUp => app.scroll_up_rows(config::PAGE_SCROLL_AMOUNT),
                     event::KeyCode::Home => app.select_first_row(),
                     event::KeyCode::End => app.select_last_row(),
                     event::KeyCode::Char('_') => autofit_column(&mut app),
