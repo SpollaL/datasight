@@ -59,7 +59,7 @@ pub fn run_app(
                     event::KeyCode::Char('b') => app.toggle_groupby_key(),
                     event::KeyCode::Char('a') => app.cycle_groupby_agg(),
                     event::KeyCode::Char('B') => {
-                        if app.groupby_active {
+                        if app.groupby.active {
                             app.clear_groupby();
                         } else {
                             app.apply_groupby();
@@ -69,7 +69,7 @@ pub fn run_app(
                     event::KeyCode::Esc => app.show_help = false,
                     event::KeyCode::Char('=') => app.autofit_all_columns(),
                     event::KeyCode::Char('p') if !app.df.is_empty() => {
-                        app.plot_y_col = app.state.selected_column();
+                        app.plot.y_col = app.state.selected_column();
                         app.mode = Mode::PlotPickX;
                     }
                     event::KeyCode::Char('i') if !app.df.is_empty() => {
@@ -95,18 +95,18 @@ pub fn run_app(
                     }
                     event::KeyCode::Right | event::KeyCode::Char('l') => app.select_next_column(),
                     event::KeyCode::Enter => {
-                        app.plot_x_col = app.state.selected_column();
+                        app.plot.x_col = app.state.selected_column();
                         app.mode = Mode::Plot;
                     }
                     event::KeyCode::Esc => {
-                        app.plot_y_col = None;
+                        app.plot.y_col = None;
                         app.mode = Mode::Normal;
                     }
                     _ => {}
                 },
                 Mode::Plot => match key.code {
                     event::KeyCode::Char('t') => {
-                        app.plot_type = match app.plot_type {
+                        app.plot.plot_type = match app.plot.plot_type {
                             PlotType::Line => PlotType::Bar,
                             PlotType::Bar => PlotType::Histogram,
                             PlotType::Histogram => PlotType::Line,
@@ -119,24 +119,27 @@ pub fn run_app(
                 Mode::UniqueValues => match key.code {
                     event::KeyCode::Esc => app.mode = Mode::Normal,
                     event::KeyCode::Down | event::KeyCode::Char('j') => {
-                        app.unique_values_state.select_next()
+                        app.unique_values.state.select_next()
                     }
                     event::KeyCode::Up | event::KeyCode::Char('k') => {
-                        app.unique_values_state.select_previous()
+                        app.unique_values.state.select_previous()
                     }
                     event::KeyCode::Backspace => {
-                        app.unique_values_query.pop();
+                        app.unique_values.query.pop();
                         app.filter_unique_values();
                     }
                     event::KeyCode::Enter => {
-                        if let Some(idx) = app.unique_values_state.selected() {
-                            if let Some((value, _)) = app.unique_values_filtered.get(idx) {
+                        if let Some(idx) = app.unique_values.state.selected() {
+                            if let Some((value, _)) = app.unique_values.filtered.get(idx) {
                                 let filter = format!("= {}", value);
-                                let col = app.unique_values_col;
-                                let already_exists =
-                                    app.filters.iter().any(|(c, q)| *c == col && q == &filter);
+                                let col = app.unique_values.col;
+                                let already_exists = app
+                                    .filter
+                                    .filters
+                                    .iter()
+                                    .any(|(c, q)| *c == col && q == &filter);
                                 if !already_exists {
-                                    app.filters.push((col, filter));
+                                    app.filter.filters.push((col, filter));
                                     app.update_filter();
                                 }
                             }
@@ -144,26 +147,26 @@ pub fn run_app(
                         app.mode = Mode::Normal;
                     }
                     event::KeyCode::Char(c) => {
-                        app.unique_values_query.push(c);
+                        app.unique_values.query.push(c);
                         app.filter_unique_values();
                     }
                     _ => {}
                 },
                 Mode::ColumnsView => match key.code {
                     event::KeyCode::Down | event::KeyCode::Char('j') => {
-                        app.columns_view_state.select_next()
+                        app.columns_view.state.select_next()
                     }
                     event::KeyCode::Up | event::KeyCode::Char('k') => {
-                        app.columns_view_state.select_previous()
+                        app.columns_view.state.select_previous()
                     }
                     event::KeyCode::Char('g') | event::KeyCode::Home => {
-                        app.columns_view_state.select_first()
+                        app.columns_view.state.select_first()
                     }
                     event::KeyCode::Char('G') | event::KeyCode::End => {
-                        app.columns_view_state.select_last()
+                        app.columns_view.state.select_last()
                     }
                     event::KeyCode::Enter => {
-                        let col = app.columns_view_state.selected().unwrap_or(0);
+                        let col = app.columns_view.state.selected().unwrap_or(0);
                         app.state.select_column(Some(col));
                         app.mode = Mode::Normal;
                     }
@@ -192,104 +195,105 @@ fn autofit_column(app: &mut App) {
 
 fn enter_search_mode(app: &mut App) {
     app.mode = Mode::Search;
-    app.search_results = Vec::new();
-    app.search_query = String::new();
+    app.search.results = Vec::new();
+    app.search.query = String::new();
 }
 
 fn enter_filter_mode(app: &mut App) {
     app.mode = Mode::Filter;
-    app.filter_input = String::new();
-    app.filter_col = app.state.selected_column();
+    app.filter.input = String::new();
+    app.filter.col = app.state.selected_column();
 }
 
 fn push_char_to_search_query(app: &mut App, c: char) {
-    app.search_query.push(c);
+    app.search.query.push(c);
     app.update_search();
 }
 
 fn push_char_to_filter_query(app: &mut App, c: char) {
-    app.filter_input.push(c);
+    app.filter.input.push(c);
     app.update_filter();
 }
 
 fn pop_char_from_search_query(app: &mut App) {
-    app.search_query.pop();
+    app.search.query.pop();
     app.update_search();
 }
 
 fn pop_char_from_filter_query(app: &mut App) {
-    app.filter_input.pop();
+    app.filter.input.pop();
     app.update_filter();
 }
 
 fn to_first_search_query_result(app: &mut App) {
-    if app.search_results.is_empty() {
+    if app.search.results.is_empty() {
         return;
     }
     app.state
-        .select(Some(app.search_results[app.search_cursor]));
+        .select(Some(app.search.results[app.search.cursor]));
     app.mode = Mode::Normal;
 }
 
 fn to_normal_mode_with_filter(app: &mut App) {
-    if app.filter_error.is_some() {
+    if app.filter.error.is_some() {
         return;
     }
     app.mode = Mode::Normal;
-    if !app.filter_input.is_empty() {
-        let col = app.filter_col.unwrap_or(0);
+    if !app.filter.input.is_empty() {
+        let col = app.filter.col.unwrap_or(0);
         let already_exists = app
+            .filter
             .filters
             .iter()
-            .any(|(c, q)| *c == col && q == &app.filter_input);
+            .any(|(c, q)| *c == col && q == &app.filter.input);
         if !already_exists {
-            app.filters.push((col, app.filter_input.clone()));
+            app.filter.filters.push((col, app.filter.input.clone()));
             app.update_filter();
         }
-        app.filter_input = String::new();
+        app.filter.input = String::new();
     }
 }
 
 fn from_search_to_normal_mode(app: &mut App) {
     app.mode = Mode::Normal;
-    app.search_results = Vec::new();
-    app.search_query = String::new();
-    app.search_cursor = 0;
+    app.search.results = Vec::new();
+    app.search.query = String::new();
+    app.search.cursor = 0;
 }
 
 fn from_filter_to_normal_mode(app: &mut App) {
     app.mode = Mode::Normal;
-    app.filter_input = String::new();
+    app.filter.input = String::new();
 }
 
 fn clear_filters(app: &mut App) {
-    app.filter_input = String::new();
-    app.filters = Vec::new();
+    app.filter.input = String::new();
+    app.filter.filters = Vec::new();
     app.update_filter();
 }
 
 fn go_to_next_search_result(app: &mut App) {
-    if app.search_results.is_empty() {
+    if app.search.results.is_empty() {
         return;
     }
-    app.search_cursor = if app.search_cursor < app.search_results.len() - 1 {
-        app.search_cursor + 1
+    app.search.cursor = if app.search.cursor < app.search.results.len() - 1 {
+        app.search.cursor + 1
     } else {
         0
     };
     app.state
-        .select(Some(app.search_results[app.search_cursor]));
+        .select(Some(app.search.results[app.search.cursor]));
 }
 
 fn go_to_previous_search_result(app: &mut App) {
-    if app.search_results.is_empty() {
+    if app.search.results.is_empty() {
         return;
     }
-    app.search_cursor = if app.search_cursor > 0 {
-        app.search_cursor - 1
+    app.search.cursor = if app.search.cursor > 0 {
+        app.search.cursor - 1
     } else {
-        app.search_results.len() - 1
+        app.search.results.len() - 1
     };
     app.state
-        .select(Some(app.search_results[app.search_cursor]));
+        .select(Some(app.search.results[app.search.cursor]));
 }
