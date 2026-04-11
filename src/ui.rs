@@ -63,34 +63,18 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     let total_cols = app.headers.len();
     let selected_col = app.state.selected_column().unwrap_or(0);
 
-    // Count how many columns fit starting from a given offset.
-    let count_from = |start: usize| -> usize {
-        let mut used = 0usize;
-        let mut count = 0usize;
-        for i in start..total_cols {
-            let w = app.column_widths.get(i).copied().unwrap_or(15) as usize;
-            let needed = if count == 0 { w } else { w + 1 }; // +1 column spacing
-            if used + needed > available_w && count > 0 {
-                break;
-            }
-            used += needed;
-            count += 1;
-        }
-        count.max(1)
-    };
-
     // Scroll col_offset to keep selected_col visible.
     if selected_col < app.viewport.col {
         app.viewport.col = selected_col;
     } else {
-        let vis = count_from(app.viewport.col);
+        let vis = count_visible_from(&app.column_widths, app.viewport.col, available_w);
         if selected_col >= app.viewport.col + vis {
             app.viewport.col = selected_col.saturating_sub(vis.saturating_sub(1));
         }
     }
     app.viewport.col = app.viewport.col.min(total_cols.saturating_sub(1));
 
-    let vis_count = count_from(app.viewport.col);
+    let vis_count = count_visible_from(&app.column_widths, app.viewport.col, available_w);
     let vis_cols: Vec<usize> = (app.viewport.col..total_cols).take(vis_count).collect();
 
     let header_cells = Row::new(vis_cols.iter().map(|&i| {
@@ -177,69 +161,95 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     frame.render_widget(Paragraph::new(shortcut_bar(app, m)), chunks[2]);
 
     if app.show_stats {
-        let col = app
-            .state
-            .selected_column()
-            .unwrap_or(0)
-            .min(app.headers.len().saturating_sub(1));
-        let stats = app.get_or_compute_stats(col);
-        let area = centered_rect(40, 40, frame.area());
-        frame.render_widget(Clear, area);
-        let content = format!(
-            "\n Count:  {}\n Min:    {}\n Max:    {}\n Mean:   {}\n Median: {}",
-            stats.count,
-            stats.min,
-            stats.max,
-            stats
-                .mean
-                .map_or("N/A".to_string(), |v| format!("{:.2}", v)),
-            stats
-                .median
-                .map_or("N/A".to_string(), |v| format!("{:.2}", v)),
-        );
-        let popup = Paragraph::new(content)
-            .block(
-                Block::default()
-                    .title(" Column Stats ")
-                    .title_style(Style::default().fg(c(m.mauve)).add_modifier(Modifier::BOLD))
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(c(m.mauve))),
-            )
-            .style(Style::default().bg(c(m.surface0)).fg(c(m.text)));
-        frame.render_widget(popup, area);
+        render_stats_popup(frame, app, m);
     }
 
     if app.show_help {
-        let area = centered_rect(55, 80, frame.area());
-        frame.render_widget(Clear, area);
-        let text = help_text(m);
-        let total_lines = text.lines.len() as u16;
-        let visible_lines = area.height.saturating_sub(2); // subtract top+bottom borders
-        app.help_scroll = app
-            .help_scroll
-            .min(total_lines.saturating_sub(visible_lines));
-        let popup = Paragraph::new(text)
-            .block(
-                Block::default()
-                    .title(" Help — j/k to scroll · ? or Esc to close ")
-                    .title_style(
-                        Style::default()
-                            .fg(c(m.lavender))
-                            .add_modifier(Modifier::BOLD),
-                    )
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(c(m.lavender))),
-            )
-            .style(Style::default().bg(c(m.surface0)).fg(c(m.text)))
-            .scroll((app.help_scroll, 0));
-        frame.render_widget(popup, area);
+        render_help_popup(frame, app, m);
     }
 
     if matches!(app.mode, Mode::UniqueValues) {
         render_unique_values_popup(frame, app, m);
     }
+}
+
+/// Returns the number of columns that fit within `available_w` terminal cells
+/// starting from column index `start`. Columns are separated by 1 spacing cell
+/// except before the first column. Always returns at least 1.
+fn count_visible_from(column_widths: &[u16], start: usize, available_w: usize) -> usize {
+    let mut used = 0usize;
+    let mut count = 0usize;
+    for i in start..column_widths.len() {
+        let w = column_widths.get(i).copied().unwrap_or(15) as usize;
+        let needed = if count == 0 { w } else { w + 1 }; // +1 column spacing
+        if used + needed > available_w && count > 0 {
+            break;
+        }
+        used += needed;
+        count += 1;
+    }
+    count.max(1)
+}
+
+fn render_stats_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorColors) {
+    let col = app
+        .state
+        .selected_column()
+        .unwrap_or(0)
+        .min(app.headers.len().saturating_sub(1));
+    let stats = app.get_or_compute_stats(col);
+    let area = centered_rect(40, 40, frame.area());
+    frame.render_widget(Clear, area);
+    let content = format!(
+        "\n Count:  {}\n Min:    {}\n Max:    {}\n Mean:   {}\n Median: {}",
+        stats.count,
+        stats.min,
+        stats.max,
+        stats
+            .mean
+            .map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+        stats
+            .median
+            .map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+    );
+    let popup = Paragraph::new(content)
+        .block(
+            Block::default()
+                .title(" Column Stats ")
+                .title_style(Style::default().fg(c(m.mauve)).add_modifier(Modifier::BOLD))
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(c(m.mauve))),
+        )
+        .style(Style::default().bg(c(m.surface0)).fg(c(m.text)));
+    frame.render_widget(popup, area);
+}
+
+fn render_help_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorColors) {
+    let area = centered_rect(55, 80, frame.area());
+    frame.render_widget(Clear, area);
+    let text = help_text(m);
+    let total_lines = text.lines.len() as u16;
+    let visible_lines = area.height.saturating_sub(2); // subtract top+bottom borders
+    app.help_scroll = app
+        .help_scroll
+        .min(total_lines.saturating_sub(visible_lines));
+    let popup = Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(" Help — j/k to scroll · ? or Esc to close ")
+                .title_style(
+                    Style::default()
+                        .fg(c(m.lavender))
+                        .add_modifier(Modifier::BOLD),
+                )
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(c(m.lavender))),
+        )
+        .style(Style::default().bg(c(m.surface0)).fg(c(m.text)))
+        .scroll((app.help_scroll, 0));
+    frame.render_widget(popup, area);
 }
 
 fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
@@ -1344,5 +1354,58 @@ mod histogram_tests {
         let data = compute_histogram_pub(&app, 0).unwrap();
         let total: f64 = data.iter().map(|(_, c)| c).sum();
         assert_eq!(total as usize, 10);
+    }
+}
+
+#[cfg(test)]
+mod count_visible_tests {
+    use super::*;
+
+    #[test]
+    fn test_all_columns_fit() {
+        // Three 10-wide columns, 32 available: 10 + 11 + 11 = 32 — all fit.
+        let widths = vec![10u16, 10, 10];
+        assert_eq!(count_visible_from(&widths, 0, 32), 3);
+    }
+
+    #[test]
+    fn test_only_first_fits() {
+        // First column (20) fits; second would need 21 more (20+1 spacing).
+        let widths = vec![20u16, 20, 20];
+        assert_eq!(count_visible_from(&widths, 0, 20), 1);
+    }
+
+    #[test]
+    fn test_offset_skips_leading_columns() {
+        // Start at index 1; widths[1]=5, widths[2]=5 → 5+6=11 fit in 12.
+        let widths = vec![100u16, 5, 5];
+        assert_eq!(count_visible_from(&widths, 1, 12), 2);
+    }
+
+    #[test]
+    fn test_returns_at_least_one_even_when_column_wider_than_available() {
+        let widths = vec![100u16];
+        assert_eq!(count_visible_from(&widths, 0, 5), 1);
+    }
+
+    #[test]
+    fn test_empty_widths_returns_one() {
+        let widths: Vec<u16> = vec![];
+        // No columns to show; count.max(1) should still return 1.
+        assert_eq!(count_visible_from(&widths, 0, 80), 1);
+    }
+
+    #[test]
+    fn test_start_beyond_end_returns_one() {
+        let widths = vec![10u16, 10];
+        // start=5 is past the end of widths; loop never runs → count=0 → max(1).
+        assert_eq!(count_visible_from(&widths, 5, 80), 1);
+    }
+
+    #[test]
+    fn test_exactly_two_fit() {
+        // widths[0]=10, widths[1]=10 → need 10+11=21. available=21 → 2 fit; widths[2] needs 11 more → 32 > 21.
+        let widths = vec![10u16, 10, 10];
+        assert_eq!(count_visible_from(&widths, 0, 21), 2);
     }
 }
