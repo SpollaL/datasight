@@ -209,6 +209,13 @@ fn validate_filter_query(query: &str, col_name: &str, df: &DataFrame) -> Option<
     None
 }
 
+/// Apply a sort to `df` by `col_name` in the given direction.
+/// Extracted to eliminate duplicated sort logic in `update_filter` and `sort_by_column`.
+fn apply_sort(df: DataFrame, col_name: &str, descending: bool) -> Result<DataFrame, PolarsError> {
+    let opts = SortMultipleOptions::default().with_order_descending(descending);
+    df.sort([col_name], opts)
+}
+
 fn build_filter_expr(col_name: &str, query: &str) -> Expr {
     let (op, rest) = parse_operator(query);
 
@@ -349,10 +356,9 @@ impl App {
 
         self.viewport.row = 0;
         self.view = if let Some(sort_col) = self.sort.column {
-            let col_name = &self.headers[sort_col];
-            let opts = SortMultipleOptions::default()
-                .with_order_descending(matches!(self.sort.direction, SortDirection::Descending));
-            match filtered.sort([col_name], opts) {
+            let col_name = self.headers[sort_col].clone();
+            let descending = matches!(self.sort.direction, SortDirection::Descending);
+            match apply_sort(filtered.clone(), &col_name, descending) {
                 Ok(sorted) => sorted,
                 Err(_) => filtered,
             }
@@ -376,10 +382,9 @@ impl App {
             self.sort.column = Some(current_column);
             self.sort.direction = SortDirection::Ascending;
         }
-        let col_name = &self.headers[current_column];
-        let opts = SortMultipleOptions::default()
-            .with_order_descending(matches!(self.sort.direction, SortDirection::Descending));
-        self.view = match self.view.sort([col_name], opts) {
+        let col_name = self.headers[current_column].clone();
+        let descending = matches!(self.sort.direction, SortDirection::Descending);
+        self.view = match apply_sort(self.view.clone(), &col_name, descending) {
             Ok(sorted) => {
                 self.sort.error = None;
                 sorted
@@ -937,6 +942,33 @@ mod tests {
         // Search results should be re-computed to point to the new row index
         assert!(!app.search.results.is_empty());
         assert_ne!(app.search.results, results_before);
+    }
+
+    #[test]
+    fn test_sort_preserved_after_filter() {
+        // Sort descending on "age" first, then apply a filter — result must remain sorted.
+        let mut app = make_app();
+        app.state.select_column(Some(1)); // age column
+        app.sort_by_column(); // ascending
+        app.sort_by_column(); // descending: 35, 30, 25
+
+        // Filter to rows where age >= 25 (all rows, but exercises the code path)
+        app.filter.filters = vec![(1, ">= 25".to_string())];
+        app.update_filter();
+
+        // Still sorted descending
+        let ages: Vec<i64> = app
+            .view
+            .column("age")
+            .unwrap()
+            .as_series()
+            .unwrap()
+            .i64()
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .collect();
+        assert_eq!(ages, vec![35, 30, 25]);
     }
 }
 
