@@ -389,6 +389,43 @@ impl App {
             .clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH)
     }
 
+    pub fn select_next_row(&mut self) {
+        let max = self.view.height().saturating_sub(1);
+        let next = self.state.selected().map_or(0, |r| (r + 1).min(max));
+        self.state.select(Some(next));
+    }
+
+    pub fn select_previous_row(&mut self) {
+        let prev = self.state.selected().map_or(0, |r| r.saturating_sub(1));
+        self.state.select(Some(prev));
+    }
+
+    pub fn select_first_row(&mut self) {
+        self.state.select(Some(0));
+    }
+
+    pub fn select_last_row(&mut self) {
+        let last = self.view.height().saturating_sub(1);
+        self.state.select(Some(last));
+    }
+
+    pub fn scroll_down_rows(&mut self, amount: u16) {
+        let max = self.view.height().saturating_sub(1);
+        let next = self
+            .state
+            .selected()
+            .map_or(0, |r| (r + amount as usize).min(max));
+        self.state.select(Some(next));
+    }
+
+    pub fn scroll_up_rows(&mut self, amount: u16) {
+        let prev = self
+            .state
+            .selected()
+            .map_or(0, |r| r.saturating_sub(amount as usize));
+        self.state.select(Some(prev));
+    }
+
     pub fn select_next_column(&mut self) {
         let max = self.headers.len().saturating_sub(1);
         let next = self.state.selected_column().map_or(0, |c| (c + 1).min(max));

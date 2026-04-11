@@ -189,12 +189,15 @@ esc
 assert_contains "D/esc-no-filter" "South"
 
 # D6: Fix 4 — filter column is locked when f is pressed, not at Enter time
-send "lllllll"  # quantity col
+# Note: after all prior navigation we're on the status col (string), so "> 0" produces an
+# error and Enter stays in Filter mode.  Add esc to cleanly return to Normal before cleanup.
+send "lllllll"  # status col (col 11, clamped from wherever we are)
 send "f"
 send "> 0"
 enter 0.25
 assert_contains "D/fix4-no-crash" "total_amount"
-send "F" 0.25
+esc             # exit Filter mode (Enter kept us here because of the type error on string col)
+send "F" 0.25   # clear all filters now that we're back in Normal mode
 
 quit
 
@@ -283,12 +286,12 @@ send "kkk"
 send "g" 0.1
 send "G" 0.1
 enter 0.25
-assert_contains "H/inspector-select" "order_id"
+assert_contains "H/inspector-select" "status"  # G selected last col (status); order_id may scroll off
 send "i" 0.3
-assert_contains "H/inspector-toggle" "order_id"
+assert_contains "H/inspector-toggle" "order_id"  # inspector lists all cols; order_id is in the list
 send "i" 0.3
 esc
-assert_contains "H/esc-close" "order_id"
+assert_contains "H/esc-close" "status"  # still at col 11 after close
 quit
 
 # ── Suite I: Group-by ─────────────────────────────────────────────────────────
@@ -410,6 +413,31 @@ esc
 sleep 0.15
 assert_contains "L/zero-plot" "order_id"
 send "F" 0.25
+
+quit
+
+# ── Suite M: Row navigation clamping ──────────────────────────────────────────
+echo ""
+echo "=== Suite M: Row navigation clamping ==="
+
+start_app "tests/fixtures/orders.csv"
+
+# M1: spam Down past end, then Up once — cursor must visually move up
+# With the bug (unclamped): G sets internal to usize::MAX or 99, then 50 Down
+# accumulates to 149; 1 Up → 148; status bar still shows "Row 100/100".
+# With the fix (clamped): Down clamps at last row (99); 1 Up → 98 → "Row 99/100".
+key G 0.30
+for _ in $(seq 1 50); do key Down 0.03; done
+key Up 0.20
+assert_contains     "M/down-spam-up" "Row 99/100"
+assert_not_contains "M/down-spam-stuck" "Row 100/100"
+
+# M2: same for j/k aliases
+key G 0.30
+for _ in $(seq 1 50); do send "j" 0.03; done
+send "k" 0.20
+assert_contains     "M/jk-spam-up" "Row 99/100"
+assert_not_contains "M/jk-spam-stuck" "Row 100/100"
 
 quit
 
