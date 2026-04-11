@@ -176,77 +176,110 @@ fn parse_operator(query: &str) -> (&'static str, &str) {
     ("", q)
 }
 
-/// Build a polars filter expression for a column and query string.
-/// Supports comparison operators (>, <, >=, <=, =, !=) for numeric values.
-/// Falls back to case-insensitive substring matching for everything else.
-/// Returns true when the query is just an operator with no value yet (user still typing).
-fn is_incomplete_operator(query: &str) -> bool {
-    let (op, rest) = parse_operator(query);
-    !op.is_empty() && rest.is_empty()
+/// Parsed representation of a filter input string.
+///
+/// `FilterQuery::parse` returns `None` when the user has typed only an operator
+/// with no value yet (e.g. `">"`), so callers can suppress error display while
+/// the user is still typing. A `Some(FilterQuery)` is ready to validate and
+/// build a Polars expression.
+struct FilterQuery<'a> {
+    op: &'static str, // "", ">", "<", ">=", "<=", "!=", "="
+    rest: &'a str,    // value portion after the operator
+    raw: &'a str,     // original input (needed for substring fallback)
 }
 
-/// Returns an error string if `query` uses a numeric-only operator (>, <, >=, <=)
-/// with a non-numeric value or against a non-numeric column.
-fn validate_filter_query(query: &str, col_name: &str, df: &DataFrame) -> Option<String> {
-    let (op, rest) = parse_operator(query);
-    if !matches!(op, ">" | "<" | ">=" | "<=") {
-        return None;
+impl<'a> FilterQuery<'a> {
+    /// Parse an input string. Returns `None` if the operator is present but
+    /// the value is empty (user is still typing an operator like `">"`).
+    fn parse(input: &'a str) -> Option<Self> {
+        let (op, rest) = parse_operator(input);
+        if !op.is_empty() && rest.is_empty() {
+            return None; // incomplete operator — suppress errors
+        }
+        Some(Self {
+            op,
+            rest,
+            raw: input,
+        })
     }
-    // Numeric operators require a numeric value
-    if !rest.is_empty() && rest.parse::<f64>().is_err() {
-        return Some(format!("'{}' requires a number (got '{}')", op, rest));
+
+    /// Returns `Some(error_msg)` if the query is semantically invalid for
+    /// the given column (e.g. a numeric operator on a string column).
+    fn validate(&self, col_name: &str, df: &DataFrame) -> Option<String> {
+        if !matches!(self.op, ">" | "<" | ">=" | "<=") {
+            return None;
+        }
+        // Numeric operators require a numeric value
+        if !self.rest.is_empty() && self.rest.parse::<f64>().is_err() {
+            return Some(format!(
+                "'{}' requires a number (got '{}')",
+                self.op, self.rest
+            ));
+        }
+        // Numeric operators require a numeric column
+        let is_numeric_col = df
+            .column(col_name)
+            .ok()
+            .and_then(|c| c.as_series())
+            .map(|s| s.dtype().is_primitive_numeric())
+            .unwrap_or(false);
+        if !is_numeric_col {
+            return Some(format!("'{}' can only filter numeric columns", self.op));
+        }
+        None
     }
-    // Numeric operators require a numeric column
-    let is_numeric_col = df
-        .column(col_name)
-        .ok()
-        .and_then(|c| c.as_series())
-        .map(|s| s.dtype().is_primitive_numeric())
-        .unwrap_or(false);
-    if !is_numeric_col {
-        return Some(format!("'{}' can only filter numeric columns", op));
+
+    /// Build the Polars filter expression for this query against `col_name`.
+    fn build_expr(&self, col_name: &str) -> Expr {
+        if !self.op.is_empty() {
+            if let Ok(value) = self.rest.parse::<f64>() {
+                return match self.op {
+                    ">=" => col(col_name).gt_eq(lit(value)),
+                    "<=" => col(col_name).lt_eq(lit(value)),
+                    "!=" => col(col_name).neq(lit(value)),
+                    ">" => col(col_name).gt(lit(value)),
+                    "<" => col(col_name).lt(lit(value)),
+                    _ => col(col_name).eq(lit(value)),
+                };
+            }
+            // Non-numeric value with = / != : exact string match.
+            // "(null)" is a sentinel for actual null values (not the string "null").
+            if self.op == "=" {
+                if self.rest == "(null)" {
+                    return col(col_name).is_null();
+                }
+                return col(col_name)
+                    .cast(DataType::String)
+                    .eq(lit(self.rest.to_string()));
+            }
+            if self.op == "!=" {
+                if self.rest == "(null)" {
+                    return col(col_name).is_not_null();
+                }
+                return col(col_name)
+                    .cast(DataType::String)
+                    .neq(lit(self.rest.to_string()));
+            }
+        }
+        col(col_name)
+            .cast(DataType::String)
+            .str()
+            .contains(lit(self.raw), false)
     }
-    None
 }
 
-fn build_filter_expr(col_name: &str, query: &str) -> Expr {
-    let (op, rest) = parse_operator(query);
-
-    if !op.is_empty() {
-        if let Ok(value) = rest.parse::<f64>() {
-            return match op {
-                ">=" => col(col_name).gt_eq(lit(value)),
-                "<=" => col(col_name).lt_eq(lit(value)),
-                "!=" => col(col_name).neq(lit(value)),
-                ">" => col(col_name).gt(lit(value)),
-                "<" => col(col_name).lt(lit(value)),
-                _ => col(col_name).eq(lit(value)),
-            };
-        }
-        // Non-numeric value with = / != : exact string match.
-        // "(null)" is a sentinel for actual null values (not the string "null").
-        if op == "=" {
-            if rest == "(null)" {
-                return col(col_name).is_null();
-            }
-            return col(col_name)
+/// Build a filter expression for an already-committed filter entry (col, query).
+/// Committed filters are never incomplete, so we unwrap the parse result.
+fn build_committed_filter_expr(col_name: &str, query: &str) -> Expr {
+    FilterQuery::parse(query)
+        .map(|fq| fq.build_expr(col_name))
+        .unwrap_or_else(|| {
+            // Fallback: plain substring match (should not occur for committed filters)
+            col(col_name)
                 .cast(DataType::String)
-                .eq(lit(rest.to_string()));
-        }
-        if op == "!=" {
-            if rest == "(null)" {
-                return col(col_name).is_not_null();
-            }
-            return col(col_name)
-                .cast(DataType::String)
-                .neq(lit(rest.to_string()));
-        }
-    }
-
-    col(col_name)
-        .cast(DataType::String)
-        .str()
-        .contains(lit(query), false)
+                .str()
+                .contains(lit(query), false)
+        })
 }
 
 impl App {
@@ -323,18 +356,26 @@ impl App {
         let mut mask = lit(true);
         for (colidx, query) in &self.filter.filters {
             let col_name = &self.headers[*colidx];
-            mask = mask.and(build_filter_expr(col_name, query));
+            mask = mask.and(build_committed_filter_expr(col_name, query));
         }
-        if !self.filter.input.is_empty() && !is_incomplete_operator(&self.filter.input) {
-            let col_idx = self
-                .filter
-                .col
-                .unwrap_or_else(|| self.state.selected_column().unwrap_or(0))
-                .min(self.headers.len().saturating_sub(1));
-            let col_name = self.headers[col_idx].clone();
-            self.filter.error = validate_filter_query(&self.filter.input, &col_name, &self.df);
-            if self.filter.error.is_none() {
-                mask = mask.and(build_filter_expr(&col_name, &self.filter.input));
+        if !self.filter.input.is_empty() {
+            match FilterQuery::parse(&self.filter.input) {
+                None => {
+                    // Incomplete operator (e.g. ">") — suppress errors while typing
+                    self.filter.error = None;
+                }
+                Some(fq) => {
+                    let col_idx = self
+                        .filter
+                        .col
+                        .unwrap_or_else(|| self.state.selected_column().unwrap_or(0))
+                        .min(self.headers.len().saturating_sub(1));
+                    let col_name = self.headers[col_idx].clone();
+                    self.filter.error = fq.validate(&col_name, &self.df);
+                    if self.filter.error.is_none() {
+                        mask = mask.and(fq.build_expr(&col_name));
+                    }
+                }
             }
         } else {
             self.filter.error = None;
@@ -1177,32 +1218,32 @@ mod incomplete_operator_tests {
 
     #[test]
     fn test_bare_gt_is_incomplete() {
-        assert!(is_incomplete_operator(">"));
+        assert!(FilterQuery::parse(">").is_none());
     }
 
     #[test]
     fn test_bare_gte_is_incomplete() {
-        assert!(is_incomplete_operator(">="));
+        assert!(FilterQuery::parse(">=").is_none());
     }
 
     #[test]
     fn test_bare_neq_is_incomplete() {
-        assert!(is_incomplete_operator("!="));
+        assert!(FilterQuery::parse("!=").is_none());
     }
 
     #[test]
     fn test_operator_with_value_is_not_incomplete() {
-        assert!(!is_incomplete_operator("> 5"));
+        assert!(FilterQuery::parse("> 5").is_some());
     }
 
     #[test]
     fn test_plain_text_is_not_incomplete() {
-        assert!(!is_incomplete_operator("hello"));
+        assert!(FilterQuery::parse("hello").is_some());
     }
 
     #[test]
     fn test_empty_string_is_not_incomplete() {
-        assert!(!is_incomplete_operator(""));
+        assert!(FilterQuery::parse("").is_some());
     }
 }
 
@@ -1220,19 +1261,22 @@ mod validate_filter_tests {
 
     #[test]
     fn test_numeric_op_on_numeric_col_valid() {
-        assert!(validate_filter_query("> 20", "age", &make_df()).is_none());
+        let fq = FilterQuery::parse("> 20").unwrap();
+        assert!(fq.validate("age", &make_df()).is_none());
     }
 
     #[test]
     fn test_numeric_op_on_string_col_returns_error() {
-        let err = validate_filter_query("> 5", "name", &make_df());
+        let fq = FilterQuery::parse("> 5").unwrap();
+        let err = fq.validate("name", &make_df());
         assert!(err.is_some());
         assert!(err.unwrap().contains("numeric"));
     }
 
     #[test]
     fn test_numeric_op_with_non_numeric_value_returns_error() {
-        let err = validate_filter_query("> abc", "age", &make_df());
+        let fq = FilterQuery::parse("> abc").unwrap();
+        let err = fq.validate("age", &make_df());
         assert!(err.is_some());
         assert!(err.unwrap().contains("number"));
     }
@@ -1240,12 +1284,33 @@ mod validate_filter_tests {
     #[test]
     fn test_eq_op_on_string_col_is_valid() {
         // = and != are string-compatible, so no error
-        assert!(validate_filter_query("= Alice", "name", &make_df()).is_none());
+        let fq = FilterQuery::parse("= Alice").unwrap();
+        assert!(fq.validate("name", &make_df()).is_none());
     }
 
     #[test]
     fn test_substring_query_is_valid() {
-        assert!(validate_filter_query("Ali", "name", &make_df()).is_none());
+        let fq = FilterQuery::parse("Ali").unwrap();
+        assert!(fq.validate("name", &make_df()).is_none());
+    }
+}
+
+#[cfg(test)]
+mod filter_query_tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_query_parse_returns_none_for_incomplete_operator() {
+        assert!(FilterQuery::parse(">").is_none());
+        assert!(FilterQuery::parse(">=").is_none());
+        assert!(FilterQuery::parse("!=").is_none());
+    }
+
+    #[test]
+    fn test_filter_query_parse_returns_some_for_complete_query() {
+        assert!(FilterQuery::parse("> 5").is_some());
+        assert!(FilterQuery::parse("alice").is_some());
+        assert!(FilterQuery::parse("= (null)").is_some());
     }
 }
 
