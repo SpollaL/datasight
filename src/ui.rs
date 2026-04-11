@@ -45,18 +45,19 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     let selected = app.state.selected().unwrap_or(0);
 
     // Scroll the viewport to keep `selected` visible.
-    if selected < app.view_offset {
-        app.view_offset = selected;
-    } else if page_h > 0 && selected >= app.view_offset + page_h {
-        app.view_offset = selected.saturating_sub(page_h - 1);
+    if selected < app.viewport.row {
+        app.viewport.row = selected;
+    } else if page_h > 0 && selected >= app.viewport.row + page_h {
+        app.viewport.row = selected.saturating_sub(page_h - 1);
     }
     // Don't let the offset run past the last page.
-    app.view_offset = app
-        .view_offset
+    app.viewport.row = app
+        .viewport
+        .row
         .min(total_rows.saturating_sub(page_h.max(1)));
 
-    let slice_len = page_h.min(total_rows.saturating_sub(app.view_offset));
-    let visible_view = app.view.slice(app.view_offset as i64, slice_len);
+    let slice_len = page_h.min(total_rows.saturating_sub(app.viewport.row));
+    let visible_view = app.view.slice(app.viewport.row as i64, slice_len);
 
     // Horizontal windowing: only pass columns that fit the terminal width to ratatui.
     // 2 border chars; column spacing of 1 between every pair of adjacent columns.
@@ -81,18 +82,18 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     };
 
     // Scroll col_offset to keep selected_col visible.
-    if selected_col < app.col_offset {
-        app.col_offset = selected_col;
+    if selected_col < app.viewport.col {
+        app.viewport.col = selected_col;
     } else {
-        let vis = count_from(app.col_offset);
-        if selected_col >= app.col_offset + vis {
-            app.col_offset = selected_col.saturating_sub(vis.saturating_sub(1));
+        let vis = count_from(app.viewport.col);
+        if selected_col >= app.viewport.col + vis {
+            app.viewport.col = selected_col.saturating_sub(vis.saturating_sub(1));
         }
     }
-    app.col_offset = app.col_offset.min(total_cols.saturating_sub(1));
+    app.viewport.col = app.viewport.col.min(total_cols.saturating_sub(1));
 
-    let vis_count = count_from(app.col_offset);
-    let vis_cols: Vec<usize> = (app.col_offset..total_cols).take(vis_count).collect();
+    let vis_count = count_from(app.viewport.col);
+    let vis_cols: Vec<usize> = (app.viewport.col..total_cols).take(vis_count).collect();
 
     let header_cells = Row::new(vis_cols.iter().map(|&i| {
         Cell::from(app.header_label(i)).style(
@@ -117,7 +118,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
 
     let rows: Vec<Row> = (0..slice_len)
         .map(|i| {
-            let abs_row = app.view_offset + i;
+            let abs_row = app.viewport.row + i;
             let bg = if abs_row % 2 == 0 {
                 c(m.base)
             } else {
@@ -171,8 +172,8 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
 
     // Render with a temporary state. Column index is relative to the visible window.
     let mut render_state = ratatui::widgets::TableState::default();
-    render_state.select(Some(selected.saturating_sub(app.view_offset)));
-    render_state.select_column(Some(selected_col.saturating_sub(app.col_offset)));
+    render_state.select(Some(selected.saturating_sub(app.viewport.row)));
+    render_state.select_column(Some(selected_col.saturating_sub(app.viewport.col)));
     frame.render_stateful_widget(table, chunks[0], &mut render_state);
     frame.render_widget(bar, chunks[1]);
     frame.render_widget(Paragraph::new(shortcut_bar(app, m)), chunks[2]);
@@ -248,7 +249,7 @@ fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
     // Secondary = always-valid base shortcuts not already shown in primary.
     type Shortcuts = &'static [(&'static str, &'static str)];
     let (primary, secondary): (Shortcuts, Shortcuts) = match app.mode {
-        Mode::Normal if app.groupby_active => (
+        Mode::Normal if app.groupby.active => (
             &[("B", "Clear group-by"), ("s", "Sort"), ("p", "Plot")],
             &[
                 ("/", "Search"),
@@ -260,7 +261,7 @@ fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
                 ("q", "Quit"),
             ],
         ),
-        Mode::Normal if !app.groupby_keys.is_empty() => (
+        Mode::Normal if !app.groupby.keys.is_empty() => (
             &[("b", "Toggle key"), ("a", "Cycle agg"), ("B", "Execute")],
             &[
                 ("/", "Search"),
@@ -273,7 +274,7 @@ fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
                 ("q", "Quit"),
             ],
         ),
-        Mode::Normal if !app.search_results.is_empty() => (
+        Mode::Normal if !app.search.results.is_empty() => (
             &[
                 ("n", "Next match"),
                 ("N", "Prev match"),
@@ -290,7 +291,7 @@ fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
                 ("q", "Quit"),
             ],
         ),
-        Mode::Normal if !app.filters.is_empty() => (
+        Mode::Normal if !app.filter.filters.is_empty() => (
             &[("F", "Clear filters"), ("f", "Add filter")],
             &[
                 ("/", "Search"),
@@ -390,7 +391,8 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
     match app.mode {
         Mode::PlotPickX => {
             let y_name = app
-                .plot_y_col
+                .plot
+                .y_col
                 .map(|i| app.headers[i].as_str())
                 .unwrap_or("?");
             (
@@ -415,7 +417,7 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
             format!(
                 " Unique values: {}  |  type to search  |  Enter filter  |  Esc close ",
                 app.headers
-                    .get(app.unique_values_col)
+                    .get(app.unique_values.col)
                     .map_or("", |s| s.as_str())
             ),
             Style::default()
@@ -432,16 +434,16 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                 .add_modifier(Modifier::BOLD),
         ),
         Mode::Search => (
-            format!(" /{}_ ", app.search_query),
+            format!(" /{}_ ", app.search.query),
             Style::default()
                 .bg(c(m.yellow))
                 .fg(c(m.base))
                 .add_modifier(Modifier::BOLD),
         ),
         Mode::Filter => {
-            if let Some(ref err) = app.filter_error {
+            if let Some(ref err) = app.filter.error {
                 (
-                    format!(" f {}_ — {} ", app.filter_input, err),
+                    format!(" f {}_ — {} ", app.filter.input, err),
                     Style::default()
                         .bg(c(m.red))
                         .fg(c(m.base))
@@ -449,7 +451,7 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                 )
             } else {
                 (
-                    format!(" f {}_ (>,<,>=,<=,!=,= for numbers) ", app.filter_input),
+                    format!(" f {}_ (>,<,>=,<=,!=,= for numbers) ", app.filter.input),
                     Style::default()
                         .bg(c(m.sapphire))
                         .fg(c(m.base))
@@ -458,17 +460,18 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
             }
         }
         Mode::Normal => {
-            let (text, fg) = if app.groupby_active {
+            let (text, fg) = if app.groupby.active {
                 let key_names = app
+                    .groupby
                     .saved_headers
                     .iter()
                     .enumerate()
-                    .filter(|(i, _)| app.groupby_keys.contains(i))
+                    .filter(|(i, _)| app.groupby.keys.contains(i))
                     .map(|(_, h)| h.as_str())
                     .collect::<Vec<_>>()
                     .join(", ");
                 let mut agg_entries: Vec<(usize, &AggFunc)> =
-                    app.groupby_aggs.iter().map(|(i, f)| (*i, f)).collect();
+                    app.groupby.aggs.iter().map(|(i, f)| (*i, f)).collect();
                 agg_entries.sort_by_key(|(i, _)| *i);
                 let agg_summary = agg_entries
                     .iter()
@@ -480,7 +483,7 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                             AggFunc::Min => "↓",
                             AggFunc::Max => "↑",
                         };
-                        format!("{}[{}]", app.saved_headers[*i], sym)
+                        format!("{}[{}]", app.groupby.saved_headers[*i], sym)
                     })
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -493,9 +496,10 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     ),
                     c(m.yellow),
                 )
-            } else if !app.groupby_keys.is_empty() {
+            } else if !app.groupby.keys.is_empty() {
                 let key_names = app
-                    .groupby_keys
+                    .groupby
+                    .keys
                     .iter()
                     .map(|&i| app.headers[i].as_str())
                     .collect::<Vec<_>>()
@@ -504,18 +508,19 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     format!(" GroupBy: {} | press B to execute ", key_names),
                     c(m.peach),
                 )
-            } else if !app.search_results.is_empty() {
+            } else if !app.search.results.is_empty() {
                 (
                     format!(
                         " [{}/{}]  {} ",
-                        app.search_cursor + 1,
-                        app.search_results.len(),
-                        app.search_query
+                        app.search.cursor + 1,
+                        app.search.results.len(),
+                        app.search.query
                     ),
                     c(m.sky),
                 )
-            } else if !app.filters.is_empty() {
+            } else if !app.filter.filters.is_empty() {
                 let filter_summary = app
+                    .filter
                     .filters
                     .iter()
                     .map(|(col, q)| {
@@ -539,7 +544,7 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     ),
                     c(m.teal),
                 )
-            } else if let Some(ref err) = app.sort_error {
+            } else if let Some(ref err) = app.sort.error {
                 (format!(" Sort error: {} ", err), c(m.red))
             } else {
                 (
@@ -639,9 +644,9 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::
 
     let col_name = app
         .headers
-        .get(app.unique_values_col)
+        .get(app.unique_values.col)
         .map_or("", |s| s.as_str());
-    let truncated_note = if app.unique_values_truncated {
+    let truncated_note = if app.unique_values.truncated {
         " [top 500]"
     } else {
         ""
@@ -649,7 +654,7 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::
     let title = format!(
         " Unique: {} ({} shown{}) ",
         col_name,
-        app.unique_values_filtered.len(),
+        app.unique_values.filtered.len(),
         truncated_note
     );
 
@@ -670,7 +675,7 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::
         .split(inner);
 
     // Search field
-    let search_text = format!(" Search: {}_ ", app.unique_values_query);
+    let search_text = format!(" Search: {}_ ", app.unique_values.query);
     frame.render_widget(
         Paragraph::new(search_text).style(Style::default().bg(c(m.surface0)).fg(c(m.text))),
         zones[0],
@@ -693,7 +698,8 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::
     .bottom_margin(1);
 
     let rows: Vec<Row> = app
-        .unique_values_filtered
+        .unique_values
+        .filtered
         .iter()
         .enumerate()
         .map(|(i, (val, count))| {
@@ -715,7 +721,7 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::
                 .add_modifier(Modifier::BOLD),
         );
 
-    frame.render_stateful_widget(table, zones[1], &mut app.unique_values_state);
+    frame.render_stateful_widget(table, zones[1], &mut app.unique_values.state);
 }
 
 fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorColors) {
@@ -781,7 +787,8 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorC
     .bottom_margin(1);
 
     let rows: Vec<Row> = app
-        .columns_profile
+        .columns_view
+        .profile
         .iter()
         .enumerate()
         .map(|(i, p)| profile_row(p, i, m))
@@ -817,7 +824,7 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorC
                 .add_modifier(Modifier::BOLD),
         );
 
-    frame.render_stateful_widget(table, chunks[0], &mut app.columns_view_state);
+    frame.render_stateful_widget(table, chunks[0], &mut app.columns_view.state);
 }
 
 fn profile_row<'a>(p: &'a ColumnProfile, idx: usize, m: &catppuccin::FlavorColors) -> Row<'a> {
@@ -985,12 +992,12 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     let full_area = frame.area();
     frame.render_widget(Clear, full_area);
 
-    let (x_idx, y_idx) = match (app.plot_x_col, app.plot_y_col) {
+    let (x_idx, y_idx) = match (app.plot.x_col, app.plot.y_col) {
         (Some(x), Some(y)) => (x, y),
         _ => return,
     };
 
-    if matches!(app.plot_type, PlotType::Histogram) {
+    if matches!(app.plot.plot_type, PlotType::Histogram) {
         render_histogram(frame, app, m, y_idx, full_area);
         return;
     }
@@ -1062,7 +1069,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     let dataset = Dataset::default()
         .name(app.headers[y_idx].as_str())
         .marker(symbols::Marker::Braille)
-        .graph_type(match app.plot_type {
+        .graph_type(match app.plot.plot_type {
             PlotType::Line => GraphType::Line,
             _ => GraphType::Bar,
         })
