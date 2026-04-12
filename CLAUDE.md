@@ -39,12 +39,27 @@ A release should only be tagged after `qa.sh` exits 0 **and** `cargo test` passe
 
 ## Architecture
 
-The entire application is four files under `src/`:
+Source files under `src/`:
 
-- **`main.rs`** — CLI parsing via `clap`, file loading (CSV/Parquet via `polars`), wires `App` into `ratatui::run`.
-- **`app.rs`** — All application state (`App` struct) and data-manipulation logic: filtering, sorting, group-by, search, column profiling, unique values, autofit. The `Mode` enum drives which keybindings are active. Two DataFrames are kept: `df` (the original, never mutated after load) and `view` (the current filtered/sorted/grouped result).
-- **`events.rs`** — The main event loop (`run_app`). Reads crossterm key events and dispatches to `App` methods or inline state changes based on `app.mode`.
-- **`ui.rs`** — All ratatui rendering. Uses Catppuccin Mocha (`PALETTE.mocha`) for colors via a thin `c()` helper. Implements viewport windowing: `view_offset` (vertical) and `col_offset` (horizontal) track which slice of the DataFrame is currently visible so that large files stay fast.
+- **`main.rs`** — CLI parsing via `clap`, file loading (CSV/TSV/Parquet/JSON/NDJSON via `polars`), wires `App` into `ratatui::run`.
+- **`app.rs`** — All application state and data-manipulation logic. `App` holds two DataFrames: `df` (the original, never mutated after load) and `view` (the current filtered/sorted/grouped result). State is decomposed into focused sub-structs: `SearchState`, `FilterState`, `SortState`, `GroupByState`, `PlotState`, `UniqueValuesState`, `ColumnsViewState`, `ViewportState`. The `Mode` enum drives which keybindings are active.
+- **`app_tests.rs`** — Unit tests for `app.rs`, loaded via `#[path]` so they share `app`'s private scope (`FilterQuery`, `parse_operator`, etc.) without requiring visibility changes.
+- **`config.rs`** — Application-wide numeric constants (`DEFAULT_COLUMN_WIDTH`, `PAGE_SCROLL_AMOUNT`, etc.).
+- **`events.rs`** — The main event loop (`run_app`). Reads crossterm key events and dispatches to `App` methods or small helper functions based on `app.mode`.
+- **`ui.rs`** — All ratatui rendering. Uses Catppuccin Mocha (`PALETTE.mocha`) for colors via a thin `c()` helper. `count_visible_from()` handles horizontal viewport windowing; `ViewportState` tracks `row`/`col` offsets so large files stay fast.
+
+### State sub-structs
+
+| Struct | Fields |
+|---|---|
+| `SearchState` | `query`, `results`, `cursor` |
+| `FilterState` | `filters`, `query`, `error`, `col` |
+| `SortState` | `column`, `direction`, `error` |
+| `GroupByState` | `keys`, `aggs`, `active`, `saved_headers`, `saved_column_widths` |
+| `PlotState` | `x_col`, `y_col`, `plot_type` |
+| `UniqueValuesState` | `col`, `values`, `filtered`, `query`, `state`, `truncated` |
+| `ColumnsViewState` | `profile`, `state` |
+| `ViewportState` | `row`, `col` |
 
 ### Mode state machine
 
@@ -54,5 +69,5 @@ The entire application is four files under `src/`:
 
 1. `main.rs` loads the file into a `polars::DataFrame`.
 2. `App::new` stores it as `df` and sets `view = df.clone()`.
-3. User actions (filter, sort, group-by) call methods on `App` that recompute `view` from `df` (or from the existing `view` for chained filters).
-4. `ui()` renders only the visible window of `view` using `view_offset`/`col_offset`.
+3. User actions (filter, sort, group-by) call methods on `App` that recompute `view` from `df`.
+4. `ui()` renders only the visible window of `view` using `ViewportState.row`/`col` offsets.

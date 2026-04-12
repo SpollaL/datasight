@@ -1,3 +1,15 @@
+//! Terminal rendering for all modes and overlays.
+//!
+//! The top-level entry point is [`ui`], which routes to a full-screen renderer
+//! ([`render_plot`], [`render_columns_view`]) or builds the main table view with
+//! overlays ([`render_stats_popup`], [`render_help_popup`],
+//! [`render_unique_values_popup`]).
+//!
+//! All colors come from Catppuccin Mocha (`PALETTE.mocha`) via the thin [`c`]
+//! helper. Viewport windowing is handled by [`count_visible_from`], which
+//! computes how many columns fit a given terminal width starting from a column
+//! offset.
+
 use crate::app::{AggFunc, App, ColumnProfile, Mode, PlotType};
 use crate::config;
 use catppuccin::PALETTE;

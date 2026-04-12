@@ -1,3 +1,15 @@
+//! Application state and data-manipulation logic.
+//!
+//! [`App`] owns two DataFrames: `df` (the original, never mutated after load) and
+//! `view` (the current filtered/sorted/grouped result shown in the UI).
+//! State is decomposed into focused sub-structs ([`SearchState`], [`FilterState`],
+//! [`SortState`], [`GroupByState`], [`PlotState`], [`UniqueValuesState`],
+//! [`ColumnsViewState`], [`ViewportState`]) so each concern is self-contained.
+//!
+//! The [`Mode`] enum is the central state-machine discriminant: [`crate::events`]
+//! dispatches key events based on the current mode, and [`crate::ui`] branches on
+//! mode to choose what to render.
+
 use crate::config;
 use polars::prelude::*;
 use ratatui::widgets::TableState;
