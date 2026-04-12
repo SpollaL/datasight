@@ -451,7 +451,7 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
         Mode::Filter => {
             if let Some(ref err) = app.filter.error {
                 (
-                    format!(" f {}_ — {} ", app.filter.input, err),
+                    format!(" f {}_ — {} ", app.filter.query, err),
                     Style::default()
                         .bg(c(m.red))
                         .fg(c(m.base))
@@ -459,7 +459,7 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                 )
             } else {
                 (
-                    format!(" f {}_ (>,<,>=,<=,!=,= for numbers) ", app.filter.input),
+                    format!(" f {}_ (>,<,>=,<=,!=,= for numbers) ", app.filter.query),
                     Style::default()
                         .bg(c(m.sapphire))
                         .fg(c(m.base))

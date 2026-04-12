@@ -200,7 +200,7 @@ fn enter_search_mode(app: &mut App) {
 
 fn enter_filter_mode(app: &mut App) {
     app.mode = Mode::Filter;
-    app.filter.input = String::new();
+    app.filter.query = String::new();
     app.filter.col = app.state.selected_column();
 }
 
@@ -210,7 +210,7 @@ fn push_char_to_search_query(app: &mut App, c: char) {
 }
 
 fn push_char_to_filter_query(app: &mut App, c: char) {
-    app.filter.input.push(c);
+    app.filter.query.push(c);
     app.update_filter();
 }
 
@@ -220,7 +220,7 @@ fn pop_char_from_search_query(app: &mut App) {
 }
 
 fn pop_char_from_filter_query(app: &mut App) {
-    app.filter.input.pop();
+    app.filter.query.pop();
     app.update_filter();
 }
 
@@ -238,18 +238,18 @@ fn to_normal_mode_with_filter(app: &mut App) {
         return;
     }
     app.mode = Mode::Normal;
-    if !app.filter.input.is_empty() {
+    if !app.filter.query.is_empty() {
         let col = app.filter.col.unwrap_or(0);
         let already_exists = app
             .filter
             .filters
             .iter()
-            .any(|(c, q)| *c == col && q == &app.filter.input);
+            .any(|(c, q)| *c == col && q == &app.filter.query);
         if !already_exists {
-            app.filter.filters.push((col, app.filter.input.clone()));
+            app.filter.filters.push((col, app.filter.query.clone()));
             app.update_filter();
         }
-        app.filter.input = String::new();
+        app.filter.query = String::new();
     }
 }
 
@@ -262,11 +262,11 @@ fn from_search_to_normal_mode(app: &mut App) {
 
 fn from_filter_to_normal_mode(app: &mut App) {
     app.mode = Mode::Normal;
-    app.filter.input = String::new();
+    app.filter.query = String::new();
 }
 
 fn clear_filters(app: &mut App) {
-    app.filter.input = String::new();
+    app.filter.query = String::new();
     app.filter.filters = Vec::new();
     app.update_filter();
 }
