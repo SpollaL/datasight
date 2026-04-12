@@ -1,3 +1,8 @@
+//! Application-wide numeric constants.
+//!
+//! Centralising magic numbers here makes tuning straightforward and keeps the
+//! constants discoverable in one place.
+
 pub const DEFAULT_COLUMN_WIDTH: u16 = 15;
 pub const MIN_COLUMN_WIDTH: u16 = 6;
 pub const MAX_COLUMN_WIDTH: u16 = 40;

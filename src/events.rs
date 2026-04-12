@@ -1,3 +1,11 @@
+//! Main event loop and key-dispatch logic.
+//!
+//! [`run_app`] drives the terminal: it draws a frame via [`crate::ui::ui`] then
+//! blocks on the next crossterm key event. The outer `match` branches on
+//! [`crate::app::Mode`]; each arm delegates to small, focused helper functions
+//! (`enter_search_mode`, `go_to_next_search_result`, etc.) or mutates [`crate::app::App`]
+//! state directly for one-liner transitions.
+
 use crate::app::{App, Mode, PlotType};
 use crate::config;
 use crate::ui::ui;
