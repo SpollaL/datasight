@@ -587,7 +587,7 @@ mod chained_filter_tests {
     fn test_filter_error_set_for_numeric_op_on_string_col() {
         let mut app = make_app();
         app.state.select_column(Some(0)); // dept (string)
-        app.filter.input = "> 5".to_string();
+        app.filter.query = "> 5".to_string();
         app.update_filter();
         assert!(app.filter.error.is_some());
     }

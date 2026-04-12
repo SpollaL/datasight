@@ -71,7 +71,7 @@ pub struct SearchState {
 #[derive(Default)]
 pub struct FilterState {
     pub filters: Vec<(usize, String)>,
-    pub input: String,
+    pub query: String,
     pub error: Option<String>,
     pub col: Option<usize>,
 }
@@ -362,8 +362,8 @@ impl App {
             let col_name = &self.headers[*colidx];
             mask = mask.and(build_committed_filter_expr(col_name, query));
         }
-        if !self.filter.input.is_empty() {
-            match FilterQuery::parse(&self.filter.input) {
+        if !self.filter.query.is_empty() {
+            match FilterQuery::parse(&self.filter.query) {
                 None => {
                     // Incomplete operator (e.g. ">") — suppress errors while typing
                     self.filter.error = None;
