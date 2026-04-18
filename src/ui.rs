@@ -579,37 +579,41 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     c(m.teal),
                 )
             } else if !app.sort.sorts.is_empty() {
-                let sort_summary = app
-                    .sort
-                    .sorts
-                    .iter()
-                    .map(|(col, dir)| {
-                        let name = app.headers.get(*col).map_or("?", |h| h.as_str());
-                        let arrow = if matches!(dir, SortDirection::Descending) {
-                            "▼"
-                        } else {
-                            "▲"
-                        };
-                        format!("{}{}", name, arrow)
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" → ");
-                (
-                    format!(
-                        " Sort: {} | Row {}/{} | Col {}/{} | {} ",
-                        sort_summary,
-                        app.state
-                            .selected()
-                            .map_or(0, |i| i.saturating_add(1).min(app.view.height())),
-                        app.view.height(),
-                        app.state
-                            .selected_column()
-                            .map_or(0, |i| i.saturating_add(1).min(app.headers.len())),
-                        app.headers.len(),
-                        app.file_path
-                    ),
-                    c(m.sapphire),
-                )
+                if let Some(ref err) = app.sort.error {
+                    (format!(" Sort error: {} ", err), c(m.red))
+                } else {
+                    let sort_summary = app
+                        .sort
+                        .sorts
+                        .iter()
+                        .map(|(col, dir)| {
+                            let name = app.headers.get(*col).map_or("?", |h| h.as_str());
+                            let arrow = if matches!(dir, SortDirection::Descending) {
+                                "▼"
+                            } else {
+                                "▲"
+                            };
+                            format!("{}{}", name, arrow)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" → ");
+                    (
+                        format!(
+                            " Sort: {} | Row {}/{} | Col {}/{} | {} ",
+                            sort_summary,
+                            app.state
+                                .selected()
+                                .map_or(0, |i| i.saturating_add(1).min(app.view.height())),
+                            app.view.height(),
+                            app.state
+                                .selected_column()
+                                .map_or(0, |i| i.saturating_add(1).min(app.headers.len())),
+                            app.headers.len(),
+                            app.file_path
+                        ),
+                        c(m.sapphire),
+                    )
+                }
             } else if let Some(ref err) = app.sort.error {
                 (format!(" Sort error: {} ", err), c(m.red))
             } else {

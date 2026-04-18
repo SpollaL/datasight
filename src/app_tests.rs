@@ -218,9 +218,12 @@ mod tests {
         assert_eq!(app.sort.sorts.len(), 1);
         assert!(matches!(app.sort.sorts[0].1, SortDirection::Descending));
 
-        // Descending → removed
+        // Descending → removed; view must be restored to original order
         app.sort_by_column();
         assert!(app.sort.sorts.is_empty());
+        assert_eq!(get_str(&app, "name", 0), "Alice");
+        assert_eq!(get_str(&app, "name", 1), "Bob");
+        assert_eq!(get_str(&app, "name", 2), "Charlie");
     }
 
     #[test]

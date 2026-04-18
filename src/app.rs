@@ -449,6 +449,10 @@ impl App {
                 .sorts
                 .push((current_column, SortDirection::Ascending));
         }
+        if self.sort.sorts.is_empty() {
+            self.update_filter();
+            return;
+        }
         let sorts = self.sort.sorts.clone();
         let headers = self.headers.clone();
         self.view = match apply_sorts(self.view.clone(), &sorts, &headers) {
@@ -559,16 +563,15 @@ impl App {
 
     pub fn header_label(&self, col_idx: usize) -> String {
         let base = &self.headers[col_idx];
-        let priority_glyphs = ['①', '②', '③', '④', '⑤'];
         let label = if let Some(pos) = self.sort.sorts.iter().position(|(c, _)| *c == col_idx) {
             let dir = if matches!(self.sort.sorts[pos].1, SortDirection::Descending) {
                 "▼"
             } else {
                 "▲"
             };
-            let glyph = priority_glyphs
-                .get(pos)
-                .map_or_else(|| (pos + 1).to_string(), |g| g.to_string());
+            // ①–⑳ (U+2460–U+2473); fall back to plain number beyond 20
+            let glyph = char::from_u32(0x2460 + pos as u32)
+                .map_or_else(|| (pos + 1).to_string(), |c| c.to_string());
             format!("{} {}{}", base, glyph, dir)
         } else {
             base.clone()
