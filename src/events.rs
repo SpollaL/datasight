@@ -62,7 +62,8 @@ pub fn run_app(
                     event::KeyCode::Char('f') => enter_filter_mode(&mut app),
                     event::KeyCode::Char('F') => clear_filters(&mut app),
                     event::KeyCode::Char('s') => app.sort_by_column(),
-                    event::KeyCode::Char('S') => app.show_stats = !app.show_stats,
+                    event::KeyCode::Char('S') => app.clear_sorts(),
+                    event::KeyCode::Char('e') => app.show_stats = !app.show_stats,
                     event::KeyCode::Char('b') => app.toggle_groupby_key(),
                     event::KeyCode::Char('a') => app.cycle_groupby_agg(),
                     event::KeyCode::Char('B') => {

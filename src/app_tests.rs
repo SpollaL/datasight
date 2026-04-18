@@ -202,6 +202,138 @@ mod tests {
             .collect();
         assert_eq!(ages, vec![35, 30, 25]);
     }
+
+    #[test]
+    fn test_sort_three_state_cycle() {
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+
+        // Not in list → Ascending
+        app.sort_by_column();
+        assert_eq!(app.sort.sorts.len(), 1);
+        assert!(matches!(app.sort.sorts[0].1, SortDirection::Ascending));
+
+        // Ascending → Descending
+        app.sort_by_column();
+        assert_eq!(app.sort.sorts.len(), 1);
+        assert!(matches!(app.sort.sorts[0].1, SortDirection::Descending));
+
+        // Descending → removed
+        app.sort_by_column();
+        assert!(app.sort.sorts.is_empty());
+    }
+
+    #[test]
+    fn test_clear_sorts_restores_original_order() {
+        let mut app = make_app();
+        app.state.select_column(Some(1)); // age column: 30, 25, 35
+        app.sort_by_column(); // ascending: 25, 30, 35 → Bob, Alice, Charlie
+        assert_eq!(get_str(&app, "name", 0), "Bob");
+
+        app.clear_sorts();
+        assert!(app.sort.sorts.is_empty());
+        // Original order: Alice, Bob, Charlie
+        assert_eq!(get_str(&app, "name", 0), "Alice");
+        assert_eq!(get_str(&app, "name", 1), "Bob");
+        assert_eq!(get_str(&app, "name", 2), "Charlie");
+    }
+
+    #[test]
+    fn test_two_column_sort() {
+        let df = df! {
+            "dept" => ["eng", "hr", "eng"],
+            "sal"  => [200i64, 150, 100],
+        }
+        .unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+
+        // Primary sort: dept ascending
+        app.state.select_column(Some(0));
+        app.sort_by_column();
+        // Secondary sort: sal ascending
+        app.state.select_column(Some(1));
+        app.sort_by_column();
+
+        assert_eq!(app.sort.sorts.len(), 2);
+
+        // dept: eng, eng, hr — primary sort ascending
+        let dept_0 = get_str(&app, "dept", 0);
+        let dept_1 = get_str(&app, "dept", 1);
+        let dept_2 = get_str(&app, "dept", 2);
+        assert_eq!(dept_0, "eng");
+        assert_eq!(dept_1, "eng");
+        assert_eq!(dept_2, "hr");
+
+        // Within eng group, sal should be ascending (100 before 200)
+        let sal_0 = app
+            .view
+            .column("sal")
+            .unwrap()
+            .as_series()
+            .unwrap()
+            .i64()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        let sal_1 = app
+            .view
+            .column("sal")
+            .unwrap()
+            .as_series()
+            .unwrap()
+            .i64()
+            .unwrap()
+            .get(1)
+            .unwrap();
+        assert!(sal_0 < sal_1);
+    }
+
+    #[test]
+    fn test_multi_sort_preserved_after_filter() {
+        let df = df! {
+            "dept" => ["eng", "hr", "eng", "hr"],
+            "sal"  => [200i64, 150, 100, 300],
+        }
+        .unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+
+        // Sort by dept asc (primary), sal asc (secondary)
+        app.state.select_column(Some(0));
+        app.sort_by_column();
+        app.state.select_column(Some(1));
+        app.sort_by_column();
+
+        // Filter: sal > 100 removes the eng/100 row
+        app.filter.filters = vec![(1, "> 100".to_string())];
+        app.update_filter();
+
+        assert_eq!(app.view.height(), 3);
+        assert_eq!(app.sort.sorts.len(), 2);
+        // eng comes first (primary sort)
+        assert_eq!(get_str(&app, "dept", 0), "eng");
+    }
+
+    #[test]
+    fn test_apply_groupby_clears_sorts() {
+        let df = df! {
+            "dept" => ["eng", "eng", "hr"],
+            "sal"  => [100i64, 200, 150],
+        }
+        .unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+
+        app.state.select_column(Some(1));
+        app.sort_by_column();
+        assert!(!app.sort.sorts.is_empty());
+
+        app.state.select_column(Some(0));
+        app.toggle_groupby_key();
+        app.state.select_column(Some(1));
+        app.cycle_groupby_agg();
+        app.apply_groupby();
+
+        assert!(app.sort.sorts.is_empty());
+    }
 }
 
 mod columns_view_tests {

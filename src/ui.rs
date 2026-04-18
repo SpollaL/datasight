@@ -10,7 +10,7 @@
 //! computes how many columns fit a given terminal width starting from a column
 //! offset.
 
-use crate::app::{AggFunc, App, ColumnProfile, Mode, PlotType};
+use crate::app::{AggFunc, App, ColumnProfile, Mode, PlotType, SortDirection};
 use crate::config;
 use catppuccin::PALETTE;
 use polars::prelude::{DataType, Series};
@@ -316,6 +316,20 @@ fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
             &[
                 ("/", "Search"),
                 ("s", "Sort"),
+                ("S", "Clear sorts"),
+                ("b", "Group-by"),
+                ("p", "Plot"),
+                ("i", "Inspector"),
+                ("u", "Unique"),
+                ("?", "Help"),
+                ("q", "Quit"),
+            ],
+        ),
+        Mode::Normal if !app.sort.sorts.is_empty() => (
+            &[("S", "Clear sorts"), ("s", "Add/cycle sort")],
+            &[
+                ("/", "Search"),
+                ("f", "Filter"),
                 ("b", "Group-by"),
                 ("p", "Plot"),
                 ("i", "Inspector"),
@@ -564,6 +578,38 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     ),
                     c(m.teal),
                 )
+            } else if !app.sort.sorts.is_empty() {
+                let sort_summary = app
+                    .sort
+                    .sorts
+                    .iter()
+                    .map(|(col, dir)| {
+                        let name = app.headers.get(*col).map_or("?", |h| h.as_str());
+                        let arrow = if matches!(dir, SortDirection::Descending) {
+                            "▼"
+                        } else {
+                            "▲"
+                        };
+                        format!("{}{}", name, arrow)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" → ");
+                (
+                    format!(
+                        " Sort: {} | Row {}/{} | Col {}/{} | {} ",
+                        sort_summary,
+                        app.state
+                            .selected()
+                            .map_or(0, |i| i.saturating_add(1).min(app.view.height())),
+                        app.view.height(),
+                        app.state
+                            .selected_column()
+                            .map_or(0, |i| i.saturating_add(1).min(app.headers.len())),
+                        app.headers.len(),
+                        app.file_path
+                    ),
+                    c(m.sapphire),
+                )
             } else if let Some(ref err) = app.sort.error {
                 (format!(" Sort error: {} ", err), c(m.red))
             } else {
@@ -632,7 +678,8 @@ fn help_text(m: &catppuccin::FlavorColors) -> Text<'static> {
         key("", "  >, <, >=, <=, !=, = for numeric columns"),
         Line::raw(""),
         section("Sort"),
-        key("s", "Sort by column (toggles asc / desc)"),
+        key("s", "Add/cycle sort on column  (▲ → ▼ → off)"),
+        key("S", "Clear all sorts"),
         Line::raw(""),
         section("Group By"),
         key("b", "Toggle group-by key [K]"),
@@ -651,7 +698,7 @@ fn help_text(m: &catppuccin::FlavorColors) -> Text<'static> {
         key("i", "Column Inspector (schema + stats)"),
         key("_", "Autofit column width"),
         key("=", "Autofit all columns"),
-        key("S", "Toggle column stats popup"),
+        key("e", "Toggle column stats popup"),
         key("?", "Toggle this help"),
         key("q", "Quit"),
         Line::raw(""),
