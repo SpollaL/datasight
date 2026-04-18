@@ -46,7 +46,7 @@ pub enum PlotType {
     Histogram,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub enum SortDirection {
     #[default]
     Ascending,
@@ -90,8 +90,7 @@ pub struct FilterState {
 
 #[derive(Default)]
 pub struct SortState {
-    pub column: Option<usize>,
-    pub direction: SortDirection,
+    pub sorts: Vec<(usize, SortDirection)>, // ordered: index 0 = primary sort
     pub error: Option<String>,
 }
 
@@ -277,11 +276,21 @@ impl<'a> FilterQuery<'a> {
     }
 }
 
-/// Apply a sort to `df` by `col_name` in the given direction.
-/// Extracted to eliminate duplicated sort logic in `update_filter` and `sort_by_column`.
-fn apply_sort(df: DataFrame, col_name: &str, descending: bool) -> Result<DataFrame, PolarsError> {
-    let opts = SortMultipleOptions::default().with_order_descending(descending);
-    df.sort([col_name], opts)
+fn apply_sorts(
+    df: DataFrame,
+    sorts: &[(usize, SortDirection)],
+    headers: &[String],
+) -> Result<DataFrame, PolarsError> {
+    if sorts.is_empty() {
+        return Ok(df);
+    }
+    let col_names: Vec<&str> = sorts.iter().map(|(i, _)| headers[*i].as_str()).collect();
+    let descending: Vec<bool> = sorts
+        .iter()
+        .map(|(_, d)| matches!(d, SortDirection::Descending))
+        .collect();
+    let opts = SortMultipleOptions::default().with_order_descending_multi(descending);
+    df.sort(col_names, opts)
 }
 
 /// Build a filter expression for an already-committed filter entry (col, query).
@@ -405,15 +414,15 @@ impl App {
         };
 
         self.viewport.row = 0;
-        self.view = if let Some(sort_col) = self.sort.column {
-            let col_name = self.headers[sort_col].clone();
-            let descending = matches!(self.sort.direction, SortDirection::Descending);
-            match apply_sort(filtered.clone(), &col_name, descending) {
+        self.view = if self.sort.sorts.is_empty() {
+            filtered
+        } else {
+            let sorts = self.sort.sorts.clone();
+            let headers = self.headers.clone();
+            match apply_sorts(filtered.clone(), &sorts, &headers) {
                 Ok(sorted) => sorted,
                 Err(_) => filtered,
             }
-        } else {
-            filtered
         };
         if !self.search.query.is_empty() {
             self.update_search();
@@ -423,18 +432,30 @@ impl App {
     pub fn sort_by_column(&mut self) {
         self.cached_stats = None;
         let current_column = self.state.selected_column().unwrap_or(0);
-        if self.sort.column == Some(current_column) {
-            self.sort.direction = match self.sort.direction {
-                SortDirection::Ascending => SortDirection::Descending,
-                SortDirection::Descending => SortDirection::Ascending,
-            };
+        if let Some(pos) = self
+            .sort
+            .sorts
+            .iter()
+            .position(|(c, _)| *c == current_column)
+        {
+            match self.sort.sorts[pos].1 {
+                SortDirection::Ascending => self.sort.sorts[pos].1 = SortDirection::Descending,
+                SortDirection::Descending => {
+                    self.sort.sorts.remove(pos);
+                }
+            }
         } else {
-            self.sort.column = Some(current_column);
-            self.sort.direction = SortDirection::Ascending;
+            self.sort
+                .sorts
+                .push((current_column, SortDirection::Ascending));
         }
-        let col_name = self.headers[current_column].clone();
-        let descending = matches!(self.sort.direction, SortDirection::Descending);
-        self.view = match apply_sort(self.view.clone(), &col_name, descending) {
+        if self.sort.sorts.is_empty() {
+            self.update_filter();
+            return;
+        }
+        let sorts = self.sort.sorts.clone();
+        let headers = self.headers.clone();
+        self.view = match apply_sorts(self.view.clone(), &sorts, &headers) {
             Ok(sorted) => {
                 self.sort.error = None;
                 sorted
@@ -447,6 +468,12 @@ impl App {
         if !self.search.query.is_empty() {
             self.update_search();
         }
+    }
+
+    pub fn clear_sorts(&mut self) {
+        self.sort.sorts.clear();
+        self.sort.error = None;
+        self.update_filter();
     }
 
     fn compute_column_width(&self, col_idx: usize) -> u16 {
@@ -536,13 +563,16 @@ impl App {
 
     pub fn header_label(&self, col_idx: usize) -> String {
         let base = &self.headers[col_idx];
-        let label = if self.sort.column == Some(col_idx) {
-            let dir = if matches!(self.sort.direction, SortDirection::Descending) {
+        let label = if let Some(pos) = self.sort.sorts.iter().position(|(c, _)| *c == col_idx) {
+            let dir = if matches!(self.sort.sorts[pos].1, SortDirection::Descending) {
                 "▼"
             } else {
                 "▲"
             };
-            format!("{} {}", base, dir)
+            // ①–⑳ (U+2460–U+2473); fall back to plain number beyond 20
+            let glyph = char::from_u32(0x2460 + pos as u32)
+                .map_or_else(|| (pos + 1).to_string(), |c| c.to_string());
+            format!("{} {}{}", base, glyph, dir)
         } else {
             base.clone()
         };
@@ -683,7 +713,7 @@ impl App {
                 .map(|s| s.to_string())
                 .collect();
             self.column_widths = vec![config::DEFAULT_COLUMN_WIDTH; df.width()];
-            self.sort.column = None;
+            self.sort.sorts.clear();
             self.search.results = Vec::new();
             self.search.cursor = 0;
             self.view = df;
@@ -812,7 +842,7 @@ impl App {
         self.groupby.keys = Vec::new();
         self.groupby.aggs = HashMap::new();
         self.groupby.active = false;
-        self.sort.column = None;
+        self.sort.sorts.clear();
         self.search.results = Vec::new();
         self.search.cursor = 0;
         self.update_filter();
