@@ -253,25 +253,25 @@ echo "=== Suite G: Stats popup ==="
 
 start_app "tests/fixtures/orders.csv"
 send "lllllllll"   # total_amount col
-send "S" 0.25
+send "e" 0.25
 assert_contains "G/stats-open" "Count"
 assert_contains "G/stats-mean" "Mean"
-send "S" 0.25
+send "e" 0.25
 assert_not_contains "G/stats-closed" "Count"
 
 # non-numeric col
 send "hhhhhh"
-send "S" 0.25
+send "e" 0.25
 assert_contains "G/stats-na" "N/A"
-send "S" 0.25
+send "e" 0.25
 quit
 
 # null fixture stats
 start_app "tests/fixtures/orders_nulls.csv"
 send "lllllllll"
-send "S" 0.25
+send "e" 0.25
 assert_contains "G/null-stats" "Count"
-send "S" 0.25
+send "e" 0.25
 quit
 
 # ── Suite H: Column Inspector ──────────────────────────────────────────────────
