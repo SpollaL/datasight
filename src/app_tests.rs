@@ -507,6 +507,55 @@ mod plot_tests {
         assert_eq!(data[0], (0.0, 10.0));
         assert!(x_is_categorical, "string x: should be categorical");
     }
+
+    fn toggle_y_col(app: &mut App, col: usize) {
+        if let Some(pos) = app.plot.y_cols.iter().position(|&c| c == col) {
+            app.plot.y_cols.remove(pos);
+        } else {
+            app.plot.y_cols.push(col);
+        }
+    }
+
+    #[test]
+    fn test_plot_pick_y_toggle_adds_column() {
+        let df = df! { "a" => [1i32], "b" => [2i32] }.unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+        app.plot.y_cols.clear();
+        toggle_y_col(&mut app, 0);
+        assert_eq!(app.plot.y_cols, vec![0]);
+    }
+
+    #[test]
+    fn test_plot_pick_y_toggle_removes_column() {
+        let df = df! { "a" => [1i32], "b" => [2i32] }.unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+        app.plot.y_cols = vec![0];
+        toggle_y_col(&mut app, 0);
+        assert!(app.plot.y_cols.is_empty());
+    }
+
+    #[test]
+    fn test_plot_pick_y_toggle_twice_restores_state() {
+        let df = df! { "a" => [1i32], "b" => [2i32] }.unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+        app.plot.y_cols.clear();
+        toggle_y_col(&mut app, 1);
+        toggle_y_col(&mut app, 1);
+        assert!(app.plot.y_cols.is_empty(), "double-toggle should return to empty");
+    }
+
+    #[test]
+    fn test_plot_pick_y_toggle_multiple_columns() {
+        let df = df! { "a" => [1i32], "b" => [2i32], "c" => [3i32] }.unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+        app.plot.y_cols.clear();
+        toggle_y_col(&mut app, 0);
+        toggle_y_col(&mut app, 2);
+        assert_eq!(app.plot.y_cols, vec![0, 2]);
+        // removing one should not affect the other
+        toggle_y_col(&mut app, 0);
+        assert_eq!(app.plot.y_cols, vec![2]);
+    }
 }
 
 mod parse_operator_tests {

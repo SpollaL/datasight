@@ -374,10 +374,8 @@ fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
             &[("← →", "Navigate"), ("Enter", "Confirm"), ("Esc", "Back")],
             &[],
         ),
-        Mode::Plot => (
-            &[("t", "Cycle type"), ("Esc / p", "Close"), ("q", "Quit")],
-            &[],
-        ),
+        // render_plot() returns early in ui() and renders its own status bar.
+        Mode::Plot => unreachable!("shortcut_bar is not called in Plot mode"),
         Mode::ColumnsView => (
             &[
                 ("j / k", "Navigate"),
@@ -473,21 +471,8 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     .add_modifier(Modifier::BOLD),
             )
         }
-        Mode::Plot => {
-            let cycle_hint = if app.plot.y_cols.len() > 1 {
-                "t cycle line/bar"
-            } else {
-                "t cycle line/bar/histogram"
-            };
-            (
-                format!(
-                    " {} chart  |  {}  |  Esc / p to close ",
-                    app.plot_type_label(),
-                    cycle_hint
-                ),
-                Style::default().bg(c(m.surface0)).fg(c(m.subtext1)),
-            )
-        }
+        // render_plot() returns early in ui() and renders its own status bar.
+        Mode::Plot => unreachable!("get_bar is not called in Plot mode"),
         Mode::UniqueValues => (
             format!(
                 " Unique values: {}  |  type to search  |  Enter filter  |  Esc close ",
@@ -1146,8 +1131,16 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
 
     let x_is_categorical = all_series.iter().any(|(_, cat)| *cat);
 
-    // Collect x labels from the first series (all share the same X column).
-    let first_len = all_series.first().map(|(d, _)| d.len()).unwrap_or(0);
+    let nonempty: Vec<(usize, &Vec<(f64, f64)>)> = all_series
+        .iter()
+        .enumerate()
+        .filter(|(_, (d, _))| !d.is_empty())
+        .map(|(i, (d, _))| (i, d))
+        .collect();
+
+    // Use first non-empty series length so categorical X labels render even when the
+    // first selected Y column has no numeric data.
+    let first_len = nonempty.first().map(|(_, d)| d.len()).unwrap_or(0);
     let x_labels = if x_is_categorical {
         collect_all_x_labels(app, x_idx, first_len)
     } else {
@@ -1187,13 +1180,6 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
         .style(Style::default().bg(c(m.surface0)).fg(c(m.subtext1))),
         bar_area,
     );
-
-    let nonempty: Vec<(usize, &Vec<(f64, f64)>)> = all_series
-        .iter()
-        .enumerate()
-        .filter(|(_, (d, _))| !d.is_empty())
-        .map(|(i, (d, _))| (i, d))
-        .collect();
 
     if nonempty.is_empty() {
         let msg = Paragraph::new(" No data to plot. Y columns must be numeric (int or float). ")
@@ -1276,7 +1262,11 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
         )
         .y_axis(
             Axis::default()
-                .title("Value")
+                .title(if app.plot.y_cols.len() == 1 {
+                    app.headers[app.plot.y_cols[0]].as_str()
+                } else {
+                    "Value"
+                })
                 .style(Style::default().fg(c(m.subtext1)))
                 .bounds(y_bounds),
         );
