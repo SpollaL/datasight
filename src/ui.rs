@@ -361,8 +361,17 @@ fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
             &[],
         ),
         Mode::Filter => (&[("Enter", "Confirm"), ("Esc", "Cancel")], &[]),
+        Mode::PlotPickY => (
+            &[
+                ("← →", "Navigate"),
+                ("Space", "Toggle Y"),
+                ("Enter", "Pick X"),
+                ("Esc", "Cancel"),
+            ],
+            &[],
+        ),
         Mode::PlotPickX => (
-            &[("← →", "Navigate"), ("Enter", "Confirm"), ("Esc", "Cancel")],
+            &[("← →", "Navigate"), ("Enter", "Confirm"), ("Esc", "Back")],
             &[],
         ),
         Mode::Plot => (
@@ -423,16 +432,21 @@ fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
 
 fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
     match app.mode {
-        Mode::PlotPickX => {
-            let y_name = app
-                .plot
-                .y_col
-                .map(|i| app.headers[i].as_str())
-                .unwrap_or("?");
+        Mode::PlotPickY => {
+            let y_names = if app.plot.y_cols.is_empty() {
+                "none".to_string()
+            } else {
+                app.plot
+                    .y_cols
+                    .iter()
+                    .map(|&i| app.headers[i].as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
             (
                 format!(
-                    " Y: {}  —  navigate to X column and press Enter  (Esc to cancel) ",
-                    y_name
+                    " Y: [{}]  —  Space toggle · ←/→ navigate · Enter pick X · Esc cancel ",
+                    y_names
                 ),
                 Style::default()
                     .bg(c(m.mauve))
@@ -440,13 +454,40 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     .add_modifier(Modifier::BOLD),
             )
         }
-        Mode::Plot => (
-            format!(
-                " {} chart  |  t cycle line/bar/histogram  |  Esc / p to close ",
-                app.plot_type_label()
-            ),
-            Style::default().bg(c(m.surface0)).fg(c(m.subtext1)),
-        ),
+        Mode::PlotPickX => {
+            let y_names = app
+                .plot
+                .y_cols
+                .iter()
+                .map(|&i| app.headers[i].as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            (
+                format!(
+                    " Y: [{}]  —  navigate to X column and press Enter  (Esc to go back) ",
+                    y_names
+                ),
+                Style::default()
+                    .bg(c(m.mauve))
+                    .fg(c(m.base))
+                    .add_modifier(Modifier::BOLD),
+            )
+        }
+        Mode::Plot => {
+            let cycle_hint = if app.plot.y_cols.len() > 1 {
+                "t cycle line/bar"
+            } else {
+                "t cycle line/bar/histogram"
+            };
+            (
+                format!(
+                    " {} chart  |  {}  |  Esc / p to close ",
+                    app.plot_type_label(),
+                    cycle_hint
+                ),
+                Style::default().bg(c(m.surface0)).fg(c(m.subtext1)),
+            )
+        }
         Mode::UniqueValues => (
             format!(
                 " Unique values: {}  |  type to search  |  Enter filter  |  Esc close ",
@@ -921,6 +962,19 @@ fn profile_row<'a>(p: &'a ColumnProfile, idx: usize, m: &catppuccin::FlavorColor
     .style(Style::default().bg(bg))
 }
 
+fn series_color(idx: usize, m: &catppuccin::FlavorColors) -> Color {
+    match idx % 8 {
+        0 => c(m.blue),
+        1 => c(m.green),
+        2 => c(m.red),
+        3 => c(m.yellow),
+        4 => c(m.mauve),
+        5 => c(m.peach),
+        6 => c(m.teal),
+        _ => c(m.lavender),
+    }
+}
+
 fn downsample(data: Vec<(f64, f64)>, max_points: usize) -> Vec<(f64, f64)> {
     if data.len() <= max_points {
         return data;
@@ -1063,24 +1117,39 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     let full_area = frame.area();
     frame.render_widget(Clear, full_area);
 
-    let (x_idx, y_idx) = match (app.plot.x_col, app.plot.y_col) {
-        (Some(x), Some(y)) => (x, y),
-        _ => return,
+    let x_idx = match app.plot.x_col {
+        Some(x) => x,
+        None => return,
     };
-
-    if matches!(app.plot.plot_type, PlotType::Histogram) {
-        render_histogram(frame, app, m, y_idx, full_area);
+    if app.plot.y_cols.is_empty() {
         return;
     }
 
-    let (raw_data, x_is_categorical) = extract_plot_data(app, x_idx, y_idx);
-    // Downsample to ~2× chart width — more points than that are invisible at terminal resolution.
-    let max_points = (full_area.width as usize * 2).max(200);
-    let data = downsample(raw_data, max_points);
+    // Histogram: single-column only; use first Y col.
+    if matches!(app.plot.plot_type, PlotType::Histogram) {
+        render_histogram(frame, app, m, app.plot.y_cols[0], full_area);
+        return;
+    }
 
-    // Collect all x labels now so we know the max length for layout.
+    let max_points = (full_area.width as usize * 2).max(200);
+
+    // Extract and downsample data for every Y column.
+    let all_series: Vec<(Vec<(f64, f64)>, bool)> = app
+        .plot
+        .y_cols
+        .iter()
+        .map(|&y_idx| {
+            let (raw, cat) = extract_plot_data(app, x_idx, y_idx);
+            (downsample(raw, max_points), cat)
+        })
+        .collect();
+
+    let x_is_categorical = all_series.iter().any(|(_, cat)| *cat);
+
+    // Collect x labels from the first series (all share the same X column).
+    let first_len = all_series.first().map(|(d, _)| d.len()).unwrap_or(0);
     let x_labels = if x_is_categorical {
-        collect_all_x_labels(app, x_idx, data.len())
+        collect_all_x_labels(app, x_idx, first_len)
     } else {
         vec![]
     };
@@ -1089,7 +1158,6 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
         .map(|s| s.chars().count())
         .max()
         .unwrap_or(0);
-    // Cap so labels never consume more than 1/3 of the screen.
     let label_height = (max_label_len as u16).min(full_area.height / 3);
 
     // Three-zone layout: chart | rotated-label strip | status bar
@@ -1105,17 +1173,30 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     let label_area = zones[1];
     let bar_area = zones[2];
 
-    let bar_text = format!(
-        " {} chart  |  t cycle line/bar/histogram  |  Esc / p to close ",
-        app.plot_type_label()
-    );
+    let cycle_hint = if app.plot.y_cols.len() > 1 {
+        "t cycle line/bar"
+    } else {
+        "t cycle line/bar/histogram"
+    };
     frame.render_widget(
-        Paragraph::new(bar_text).style(Style::default().bg(c(m.surface0)).fg(c(m.subtext1))),
+        Paragraph::new(format!(
+            " {} chart  |  {}  |  Esc / p to close ",
+            app.plot_type_label(),
+            cycle_hint
+        ))
+        .style(Style::default().bg(c(m.surface0)).fg(c(m.subtext1))),
         bar_area,
     );
 
-    if data.is_empty() {
-        let msg = Paragraph::new(" No data to plot. Y column must be numeric (int or float). ")
+    let nonempty: Vec<(usize, &Vec<(f64, f64)>)> = all_series
+        .iter()
+        .enumerate()
+        .filter(|(_, (d, _))| !d.is_empty())
+        .map(|(i, (d, _))| (i, d))
+        .collect();
+
+    if nonempty.is_empty() {
+        let msg = Paragraph::new(" No data to plot. Y columns must be numeric (int or float). ")
             .block(
                 Block::default()
                     .title(" Plot Error ")
@@ -1129,38 +1210,66 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
         return;
     }
 
-    let x_min = data.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
-    let x_max = data.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
-    let y_min = data.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
-    let y_max = data.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+    let x_min = nonempty
+        .iter()
+        .flat_map(|(_, d)| d.iter().map(|p| p.0))
+        .fold(f64::INFINITY, f64::min);
+    let x_max = nonempty
+        .iter()
+        .flat_map(|(_, d)| d.iter().map(|p| p.0))
+        .fold(f64::NEG_INFINITY, f64::max);
+    let y_min = nonempty
+        .iter()
+        .flat_map(|(_, d)| d.iter().map(|p| p.1))
+        .fold(f64::INFINITY, f64::min);
+    let y_max = nonempty
+        .iter()
+        .flat_map(|(_, d)| d.iter().map(|p| p.1))
+        .fold(f64::NEG_INFINITY, f64::max);
 
     let y_pad = (y_max - y_min).abs() * config::Y_AXIS_PADDING;
     let y_bounds = [y_min - y_pad, y_max + y_pad];
 
-    let dataset = Dataset::default()
-        .name(app.headers[y_idx].as_str())
-        .marker(symbols::Marker::Braille)
-        .graph_type(match app.plot.plot_type {
-            PlotType::Line => GraphType::Line,
-            _ => GraphType::Bar,
-        })
-        .style(Style::default().fg(c(m.blue)))
-        .data(&data);
+    let graph_type = match app.plot.plot_type {
+        PlotType::Line => GraphType::Line,
+        _ => GraphType::Bar,
+    };
 
-    let chart = Chart::new(vec![dataset])
+    let datasets: Vec<Dataset<'_>> = nonempty
+        .iter()
+        .map(|(series_idx, data)| {
+            let y_idx = app.plot.y_cols[*series_idx];
+            Dataset::default()
+                .name(app.headers[y_idx].as_str())
+                .marker(symbols::Marker::Braille)
+                .graph_type(graph_type)
+                .style(Style::default().fg(series_color(*series_idx, m)))
+                .data(data)
+        })
+        .collect();
+
+    let title_y = app
+        .plot
+        .y_cols
+        .iter()
+        .map(|&i| app.headers[i].as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let chart = Chart::new(datasets)
         .block(
             Block::default()
-                .title(format!(
-                    " {} vs {} ",
-                    app.headers[y_idx], app.headers[x_idx]
-                ))
-                .title_style(Style::default().fg(c(m.blue)).add_modifier(Modifier::BOLD))
+                .title(format!(" {} vs {} ", title_y, app.headers[x_idx]))
+                .title_style(
+                    Style::default()
+                        .fg(series_color(0, m))
+                        .add_modifier(Modifier::BOLD),
+                )
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(c(m.overlay0)))
                 .style(Style::default().bg(c(m.base))),
         )
-        // Categorical X: don't pass labels to Chart — we render them vertically below.
         .x_axis(
             Axis::default()
                 .title(app.headers[x_idx].as_str())
@@ -1169,23 +1278,88 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
         )
         .y_axis(
             Axis::default()
-                .title(app.headers[y_idx].as_str())
+                .title("Value")
                 .style(Style::default().fg(c(m.subtext1)))
                 .bounds(y_bounds),
         );
 
     frame.render_widget(chart, chart_area);
 
+    // Legend for multi-series plots.
+    if app.plot.y_cols.len() > 1 {
+        render_plot_legend(frame, app, m, chart_area);
+    }
+
     if !x_labels.is_empty() && label_area.height > 0 {
         render_vertical_x_labels(
             frame,
             &x_labels,
-            data.len(),
+            first_len,
             chart_area,
             label_area,
             c(m.subtext1),
         );
     }
+}
+
+fn render_plot_legend(
+    frame: &mut Frame,
+    app: &App,
+    m: &catppuccin::FlavorColors,
+    chart_area: Rect,
+) {
+    let legend_inner_w = app
+        .plot
+        .y_cols
+        .iter()
+        .map(|&i| app.headers[i].chars().count() + 3) // "● " prefix + padding
+        .max()
+        .unwrap_or(4) as u16;
+    let legend_w = legend_inner_w + 2; // borders
+    let legend_h = app.plot.y_cols.len() as u16 + 2;
+
+    let legend_x = chart_area
+        .x
+        .saturating_add(chart_area.width)
+        .saturating_sub(legend_w)
+        .saturating_sub(1);
+    let legend_y = chart_area.y + 1;
+
+    if legend_w > chart_area.width || legend_h > chart_area.height {
+        return;
+    }
+
+    let legend_area = Rect {
+        x: legend_x,
+        y: legend_y,
+        width: legend_w,
+        height: legend_h,
+    };
+
+    let lines: Vec<Line<'_>> = app
+        .plot
+        .y_cols
+        .iter()
+        .enumerate()
+        .map(|(i, &y_idx)| {
+            Line::from(vec![
+                Span::styled("● ", Style::default().fg(series_color(i, m))),
+                Span::styled(
+                    app.headers[y_idx].as_str(),
+                    Style::default().fg(c(m.text)),
+                ),
+            ])
+        })
+        .collect();
+
+    let legend = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(c(m.overlay0)))
+            .style(Style::default().bg(c(m.base))),
+    );
+    frame.render_widget(legend, legend_area);
 }
 
 #[cfg(test)]

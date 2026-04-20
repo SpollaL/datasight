@@ -326,26 +326,76 @@ echo ""
 echo "=== Suite J: Plot mode ==="
 
 start_app "tests/fixtures/orders.csv"
-send "lllllllll"   # total_amount col
+
+# J1: single-Y plot — PlotPickY → PlotPickX → Plot
+send "lllllllll"          # total_amount (col 9)
 send "p" 0.25
-assert_contains "J/pick-x" "order_id"   # pane still alive
-send "hhhhhhhhh"   # navigate to order_id col (9 left from total_amount)
+assert_contains "J/picky-mode"   "Space toggle"   # in PlotPickY
+assert_contains "J/picky-presel" "total_amount"   # pre-selected in status bar
+
+enter 0.25                # confirm single Y, move to PlotPickX
+assert_contains "J/pickx-prompt" "navigate to X"
+
+send "hhhhhhhhh"          # 9 left → order_id (col 0)
 enter 0.4
-assert_contains "J/plot-rendered" "total_amount"
+assert_contains "J/plot-rendered"  "total_amount"
 send "t" 0.25
-assert_contains "J/plot-bar" "total_amount"
+assert_contains "J/plot-bar"       "Bar"
 send "t" 0.25
-assert_contains "J/plot-hist" "total_amount"
+assert_contains "J/plot-hist"      "Histogram"   # single-Y: histogram available
 send "t" 0.25
 esc
 sleep 0.2
-assert_contains "J/plot-exit" "order_id"
+assert_contains "J/plot-exit"      "order_id"
 
-# Cancel PlotPickX with Esc
+# J2: multi-Y plot — two columns, legend, histogram disabled
+send "lllllllll"          # total_amount (col 9)
+send "p" 0.25             # PlotPickY, total_amount pre-selected
+key Left 0.15
+key Left 0.15             # navigate to quantity (col 7)
+send " " 0.25             # Space: toggle quantity into Y cols
+assert_contains "J/picky-two-y"   "quantity"     # both cols now in status bar
+
+enter 0.25                # confirm Y cols, move to PlotPickX
+assert_contains "J/pickx-two-y"   "navigate to X"
+
+key Left 0.15
+key Left 0.15
+key Left 0.15
+key Left 0.15
+key Left 0.15
+key Left 0.15
+key Left 0.15             # 7 left → order_id (col 0)
+enter 0.4
+assert_contains     "J/multi-rendered"  "total_amount"
+assert_contains     "J/multi-legend"    "●"          # legend marker
+send "t" 0.25
+assert_contains     "J/multi-bar"       "Bar"
+assert_not_contains "J/multi-no-hist"   "Histogram"  # histogram disabled for multi-Y
+send "t" 0.25
+assert_contains     "J/multi-line"      "Line"
+esc
+sleep 0.2
+assert_contains "J/multi-exit" "order_id"
+
+# J3: Esc from PlotPickY cancels entirely
+send "lllllllll"
 send "p" 0.25
 esc
 sleep 0.15
-assert_contains "J/pickx-esc" "order_id"
+assert_contains "J/picky-esc" "order_id"
+
+# J4: Esc from PlotPickX goes back to PlotPickY
+send "lllllllll"
+send "p" 0.25
+enter 0.25                # go to PlotPickX
+esc
+sleep 0.15
+assert_contains "J/pickx-esc-back" "Space toggle"  # back in PlotPickY
+esc
+sleep 0.15
+assert_contains "J/picky-esc2"     "order_id"
+
 quit
 
 # ── Suite K: Help popup ────────────────────────────────────────────────────────
