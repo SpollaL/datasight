@@ -1238,9 +1238,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     let datasets: Vec<Dataset<'_>> = nonempty
         .iter()
         .map(|(series_idx, data)| {
-            let y_idx = app.plot.y_cols[*series_idx];
             Dataset::default()
-                .name(app.headers[y_idx].as_str())
                 .marker(symbols::Marker::Braille)
                 .graph_type(graph_type)
                 .style(Style::default().fg(series_color(*series_idx, m)))
