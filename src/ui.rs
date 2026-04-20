@@ -1344,10 +1344,7 @@ fn render_plot_legend(
         .map(|(i, &y_idx)| {
             Line::from(vec![
                 Span::styled("● ", Style::default().fg(series_color(i, m))),
-                Span::styled(
-                    app.headers[y_idx].as_str(),
-                    Style::default().fg(c(m.text)),
-                ),
+                Span::styled(app.headers[y_idx].as_str(), Style::default().fg(c(m.text))),
             ])
         })
         .collect();

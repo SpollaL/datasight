@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+# shellcheck source=/dev/null
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+
 echo "Running cargo fmt --check..."
 cargo fmt --check
 
