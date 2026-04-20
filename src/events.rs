@@ -77,8 +77,11 @@ pub fn run_app(
                     event::KeyCode::Esc => app.show_help = false,
                     event::KeyCode::Char('=') => app.autofit_all_columns(),
                     event::KeyCode::Char('p') if !app.df.is_empty() => {
-                        app.plot.y_col = app.state.selected_column();
-                        app.mode = Mode::PlotPickX;
+                        app.plot.y_cols.clear();
+                        if let Some(col) = app.state.selected_column() {
+                            app.plot.y_cols.push(col);
+                        }
+                        app.mode = Mode::PlotPickY;
                     }
                     event::KeyCode::Char('i') if !app.df.is_empty() => {
                         app.build_columns_profile();
@@ -97,6 +100,29 @@ pub fn run_app(
                     event::KeyCode::Esc => from_search_to_normal_mode(&mut app),
                     _ => {}
                 },
+                Mode::PlotPickY => match key.code {
+                    event::KeyCode::Left | event::KeyCode::Char('h') => {
+                        app.select_previous_column()
+                    }
+                    event::KeyCode::Right | event::KeyCode::Char('l') => app.select_next_column(),
+                    event::KeyCode::Char(' ') => {
+                        if let Some(col) = app.state.selected_column() {
+                            if let Some(pos) = app.plot.y_cols.iter().position(|&c| c == col) {
+                                app.plot.y_cols.remove(pos);
+                            } else {
+                                app.plot.y_cols.push(col);
+                            }
+                        }
+                    }
+                    event::KeyCode::Enter if !app.plot.y_cols.is_empty() => {
+                        app.mode = Mode::PlotPickX;
+                    }
+                    event::KeyCode::Esc => {
+                        app.plot.y_cols.clear();
+                        app.mode = Mode::Normal;
+                    }
+                    _ => {}
+                },
                 Mode::PlotPickX => match key.code {
                     event::KeyCode::Left | event::KeyCode::Char('h') => {
                         app.select_previous_column()
@@ -107,17 +133,23 @@ pub fn run_app(
                         app.mode = Mode::Plot;
                     }
                     event::KeyCode::Esc => {
-                        app.plot.y_col = None;
-                        app.mode = Mode::Normal;
+                        app.mode = Mode::PlotPickY;
                     }
                     _ => {}
                 },
                 Mode::Plot => match key.code {
                     event::KeyCode::Char('t') => {
-                        app.plot.plot_type = match app.plot.plot_type {
-                            PlotType::Line => PlotType::Bar,
-                            PlotType::Bar => PlotType::Histogram,
-                            PlotType::Histogram => PlotType::Line,
+                        app.plot.plot_type = if app.plot.y_cols.len() > 1 {
+                            match app.plot.plot_type {
+                                PlotType::Line => PlotType::Bar,
+                                _ => PlotType::Line,
+                            }
+                        } else {
+                            match app.plot.plot_type {
+                                PlotType::Line => PlotType::Bar,
+                                PlotType::Bar => PlotType::Histogram,
+                                PlotType::Histogram => PlotType::Line,
+                            }
                         };
                     }
                     event::KeyCode::Esc | event::KeyCode::Char('p') => app.mode = Mode::Normal,

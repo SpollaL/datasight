@@ -56,14 +56,14 @@ Source files under `src/`:
 | `FilterState` | `filters`, `query`, `error`, `col` |
 | `SortState` | `column`, `direction`, `error` |
 | `GroupByState` | `keys`, `aggs`, `active`, `saved_headers`, `saved_column_widths` |
-| `PlotState` | `x_col`, `y_col`, `plot_type` |
+| `PlotState` | `y_cols`, `x_col`, `plot_type` |
 | `UniqueValuesState` | `col`, `values`, `filtered`, `query`, `state`, `truncated` |
 | `ColumnsViewState` | `profile`, `state` |
 | `ViewportState` | `row`, `col` |
 
 ### Mode state machine
 
-`Mode` variants (defined in `app.rs`): `Normal`, `Search`, `Filter`, `PlotPickX`, `Plot`, `ColumnsView`, `UniqueValues`. The event loop in `events.rs` matches on `app.mode` first; `ui.rs` branches on mode to render the appropriate full-screen view or popup overlay.
+`Mode` variants (defined in `app.rs`): `Normal`, `Search`, `Filter`, `PlotPickY`, `PlotPickX`, `Plot`, `ColumnsView`, `UniqueValues`. The event loop in `events.rs` matches on `app.mode` first; `ui.rs` branches on mode to render the appropriate full-screen view or popup overlay.
 
 ### Data flow
 

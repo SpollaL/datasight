@@ -32,6 +32,7 @@ pub enum Mode {
     Search,
     Normal,
     Filter,
+    PlotPickY,
     PlotPickX,
     Plot,
     ColumnsView,
@@ -105,7 +106,7 @@ pub struct GroupByState {
 
 #[derive(Default)]
 pub struct PlotState {
-    pub y_col: Option<usize>,
+    pub y_cols: Vec<usize>,
     pub x_col: Option<usize>,
     pub plot_type: PlotType,
 }
