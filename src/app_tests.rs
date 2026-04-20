@@ -541,7 +541,10 @@ mod plot_tests {
         app.plot.y_cols.clear();
         toggle_y_col(&mut app, 1);
         toggle_y_col(&mut app, 1);
-        assert!(app.plot.y_cols.is_empty(), "double-toggle should return to empty");
+        assert!(
+            app.plot.y_cols.is_empty(),
+            "double-toggle should return to empty"
+        );
     }
 
     #[test]
