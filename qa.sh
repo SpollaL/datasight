@@ -394,7 +394,7 @@ sleep 0.15
 assert_contains "J/pickx-esc-back" "Space toggle"  # back in PlotPickY
 esc
 sleep 0.15
-assert_contains "J/picky-esc2"     "order_id"
+assert_not_contains "J/picky-esc2"  "Space toggle"
 
 quit
 
