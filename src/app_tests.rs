@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn test_update_filter_finds_matches() {
         let mut app = make_app();
-        app.filter.filters = vec![(0, "Bob".to_string())];
+        app.filter.filters = vec![("name".to_string(), "Bob".to_string())];
         app.update_filter();
         assert_eq!(app.view.height(), 1);
     }
@@ -120,7 +120,7 @@ mod tests {
         .unwrap();
         let mut app = App::new(df, "test.csv".to_string());
         // Filter to zero rows then search — must not panic
-        app.filter.filters = vec![(0, "zzznomatch".to_string())];
+        app.filter.filters = vec![("name".to_string(), "zzznomatch".to_string())];
         app.update_filter();
         app.search.query = "alice".to_string();
         app.update_search();
@@ -134,7 +134,7 @@ mod tests {
         }
         .unwrap();
         let mut app = App::new(df, "test.csv".to_string());
-        app.filter.filters = vec![(0, "zzznomatch".to_string())];
+        app.filter.filters = vec![("val".to_string(), "zzznomatch".to_string())];
         app.update_filter();
         // Should return default stats without panicking
         let stats = app.compute_stats(0);
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn test_filter_to_zero_rows() {
         let mut app = make_app();
-        app.filter.filters = vec![(0, "zzznomatch".to_string())];
+        app.filter.filters = vec![("name".to_string(), "zzznomatch".to_string())];
         app.update_filter();
         assert_eq!(app.view.height(), 0);
     }
@@ -185,7 +185,7 @@ mod tests {
         app.sort_by_column(); // descending: 35, 30, 25
 
         // Filter to rows where age >= 25 (all rows, but exercises the code path)
-        app.filter.filters = vec![(1, ">= 25".to_string())];
+        app.filter.filters = vec![("age".to_string(), ">= 25".to_string())];
         app.update_filter();
 
         // Still sorted descending
@@ -307,7 +307,7 @@ mod tests {
         app.sort_by_column();
 
         // Filter: sal > 100 removes the eng/100 row
-        app.filter.filters = vec![(1, "> 100".to_string())];
+        app.filter.filters = vec![("sal".to_string(), "> 100".to_string())];
         app.update_filter();
 
         assert_eq!(app.view.height(), 3);
@@ -409,6 +409,155 @@ mod groupby_tests {
         assert_eq!(app.view.height(), 3);
         assert_eq!(app.headers[0], "dept");
     }
+
+    #[test]
+    fn test_sort_cycle_preserves_groupby() {
+        // Regression: pressing 's' three times in groupby view must not dissolve
+        // the aggregated view back into the raw dataframe.
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.toggle_groupby_key();
+        app.state.select_column(Some(1));
+        app.cycle_groupby_agg();
+        app.apply_groupby();
+        assert_eq!(app.headers, vec!["dept", "sal_sum"]);
+        assert_eq!(app.view.height(), 2);
+
+        app.state.select_column(Some(1));
+        app.sort_by_column(); // asc
+        app.sort_by_column(); // desc
+        app.sort_by_column(); // removes sort → update_filter path
+
+        assert_eq!(app.view.height(), 2, "groupby view was lost");
+        assert_eq!(app.view.get_column_names(), vec!["dept", "sal_sum"]);
+        assert!(app.groupby.active);
+    }
+
+    #[test]
+    fn test_clear_sorts_preserves_groupby() {
+        // `S` (clear_sorts) must also keep the grouped view intact.
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.toggle_groupby_key();
+        app.state.select_column(Some(1));
+        app.cycle_groupby_agg();
+        app.apply_groupby();
+
+        app.state.select_column(Some(1));
+        app.sort_by_column();
+        app.clear_sorts();
+
+        assert_eq!(app.view.height(), 2);
+        assert_eq!(app.view.get_column_names(), vec!["dept", "sal_sum"]);
+        assert!(app.groupby.active);
+    }
+
+    #[test]
+    fn test_filter_applies_pre_aggregation() {
+        // A raw-column filter should reshape the rows that feed the aggregation,
+        // not the aggregated output.
+        let df = df! {
+            "dept"   => ["eng", "eng", "eng", "hr", "hr"],
+            "region" => ["N",   "N",   "S",   "N",  "S"],
+            "sal"    => [100i64, 200, 300, 150, 250],
+        }
+        .unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+
+        // Filter to North only, then groupby dept with sum(sal)
+        app.filter.filters = vec![("region".to_string(), "= N".to_string())];
+        app.update_filter();
+
+        app.state.select_column(Some(0));
+        app.toggle_groupby_key();
+        app.state.select_column(Some(2));
+        app.cycle_groupby_agg();
+        app.apply_groupby();
+
+        // eng=N has 100+200=300; hr=N has 150. Without pre-agg filter we'd see
+        // eng=600 and hr=400 instead.
+        let dept_col = app
+            .view
+            .column("dept")
+            .unwrap()
+            .as_series()
+            .unwrap()
+            .cast(&DataType::String)
+            .unwrap();
+        let sums: HashMap<String, i64> = (0..app.view.height())
+            .map(|i| {
+                (
+                    dept_col.str().unwrap().get(i).unwrap_or("").to_string(),
+                    app.view
+                        .column("sal_sum")
+                        .unwrap()
+                        .as_series()
+                        .unwrap()
+                        .i64()
+                        .unwrap()
+                        .get(i)
+                        .unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(sums.get("eng"), Some(&300));
+        assert_eq!(sums.get("hr"), Some(&150));
+    }
+
+    #[test]
+    fn test_filter_on_aggregated_column() {
+        // A filter added while in groupby view targets the aggregated schema
+        // and narrows the post-agg rows.
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.toggle_groupby_key();
+        app.state.select_column(Some(1));
+        app.cycle_groupby_agg();
+        app.apply_groupby();
+        // eng=300, hr=150 — filter sal_sum > 200 keeps only eng.
+        app.filter
+            .filters
+            .push(("sal_sum".to_string(), "> 200".to_string()));
+        app.update_filter();
+        assert_eq!(app.view.height(), 1);
+        let dept0 = app.view.column("dept").unwrap().get(0).unwrap().to_string();
+        assert!(dept0.contains("eng"), "expected 'eng', got {dept0}");
+    }
+
+    #[test]
+    fn test_clear_groupby_keeps_raw_filters() {
+        // Filters on raw columns should survive clear_groupby; filters on
+        // aggregated columns should be dropped.
+        let df = df! {
+            "dept"   => ["eng", "eng", "hr"],
+            "region" => ["N",   "S",   "N"],
+            "sal"    => [100i64, 200, 150],
+        }
+        .unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+
+        app.filter.filters = vec![("region".to_string(), "= N".to_string())];
+        app.update_filter();
+
+        app.state.select_column(Some(0));
+        app.toggle_groupby_key();
+        app.state.select_column(Some(2));
+        app.cycle_groupby_agg();
+        app.apply_groupby();
+
+        app.filter
+            .filters
+            .push(("sal_sum".to_string(), "> 0".to_string()));
+        app.update_filter();
+
+        app.clear_groupby();
+        // Raw-column filter kept, aggregated-column filter dropped.
+        assert_eq!(
+            app.filter.filters,
+            vec![("region".to_string(), "= N".to_string())]
+        );
+        assert_eq!(app.view.height(), 2); // two North rows in raw data
+    }
 }
 
 mod filter_expr_tests {
@@ -424,7 +573,8 @@ mod filter_expr_tests {
     }
 
     fn apply(app: &mut App, col_idx: usize, query: &str) -> usize {
-        app.filter.filters = vec![(col_idx, query.to_string())];
+        let col_name = app.headers[col_idx].clone();
+        app.filter.filters = vec![(col_name, query.to_string())];
         app.update_filter();
         app.view.height()
     }
@@ -732,7 +882,10 @@ mod chained_filter_tests {
     fn test_two_filters_on_different_columns() {
         let mut app = make_app();
         // dept = eng AND sal > 150 → only the 200 row
-        app.filter.filters = vec![(0, "eng".to_string()), (1, "> 150".to_string())];
+        app.filter.filters = vec![
+            ("dept".to_string(), "eng".to_string()),
+            ("sal".to_string(), "> 150".to_string()),
+        ];
         app.update_filter();
         assert_eq!(app.view.height(), 1);
     }
@@ -740,20 +893,20 @@ mod chained_filter_tests {
     #[test]
     fn test_duplicate_filter_not_stacked() {
         let mut app = make_app();
-        app.filter.filters = vec![(0, "eng".to_string())];
+        app.filter.filters = vec![("dept".to_string(), "eng".to_string())];
         app.update_filter();
         let height_first = app.view.height();
 
         // Simulate pressing Enter with the same filter again
-        let col = 0;
+        let col_name = "dept".to_string();
         let query = "eng".to_string();
         let already_exists = app
             .filter
             .filters
             .iter()
-            .any(|(c, q)| *c == col && q == &query);
+            .any(|(c, q)| c == &col_name && q == &query);
         if !already_exists {
-            app.filter.filters.push((col, query));
+            app.filter.filters.push((col_name, query));
             app.update_filter();
         }
 
@@ -765,7 +918,10 @@ mod chained_filter_tests {
     fn test_range_filter_two_ops_same_column() {
         let mut app = make_app();
         // sal >= 100 AND sal <= 150 → 100, 150 rows
-        app.filter.filters = vec![(1, ">= 100".to_string()), (1, "<= 150".to_string())];
+        app.filter.filters = vec![
+            ("sal".to_string(), ">= 100".to_string()),
+            ("sal".to_string(), "<= 150".to_string()),
+        ];
         app.update_filter();
         assert_eq!(app.view.height(), 2);
     }

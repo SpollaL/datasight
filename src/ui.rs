@@ -583,9 +583,7 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     .filter
                     .filters
                     .iter()
-                    .map(|(col, q)| {
-                        format!("[{}: {}]", app.headers.get(*col).map_or("?", |h| h), q)
-                    })
+                    .map(|(col, q)| format!("[{}: {}]", col, q))
                     .collect::<Vec<_>>()
                     .join(" ");
                 (

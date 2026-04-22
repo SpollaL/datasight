@@ -13,7 +13,7 @@
 use crate::config;
 use polars::prelude::*;
 use ratatui::widgets::TableState;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct ColumnProfile {
     pub name: String,
@@ -83,7 +83,9 @@ pub struct SearchState {
 
 #[derive(Default)]
 pub struct FilterState {
-    pub filters: Vec<(usize, String)>,
+    // Keyed by column name (not index) so filters remain meaningful
+    // across groupby transitions, which rewrite `App::headers`.
+    pub filters: Vec<(String, String)>,
     pub query: String,
     pub error: Option<String>,
     pub col: Option<usize>,
@@ -377,13 +379,58 @@ impl App {
         self.search.cursor = 0;
     }
 
+    /// Rebuilds `self.view` from `self.df` through the pipeline
+    /// raw → filter(raw-cols) → [groupby] → filter(agg-cols + in-progress) → sort.
+    ///
+    /// Committed filters are routed by column-name membership: filters whose column
+    /// exists in `self.df` run pre-aggregation, the rest run post-aggregation. This
+    /// lets e.g. a `region = North` filter keep shaping the raw rows that feed a
+    /// groupby, while a `sal_sum > 500` filter narrows the aggregated result.
     pub fn update_filter(&mut self) {
         self.cached_stats = None;
-        let mut mask = lit(true);
-        for (colidx, query) in &self.filter.filters {
-            let col_name = &self.headers[*colidx];
-            mask = mask.and(build_committed_filter_expr(col_name, query));
+        self.viewport.row = 0;
+
+        let raw_cols: HashSet<String> = self
+            .df
+            .get_column_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        // Split committed filters by which stage of the pipeline they apply to.
+        let mut raw_mask = lit(true);
+        let mut agg_mask = lit(true);
+        for (col_name, query) in &self.filter.filters {
+            let expr = build_committed_filter_expr(col_name, query);
+            if raw_cols.contains(col_name) {
+                raw_mask = raw_mask.and(expr);
+            } else {
+                agg_mask = agg_mask.and(expr);
+            }
         }
+
+        let raw_filtered = match self.df.clone().lazy().filter(raw_mask).collect() {
+            Ok(df) => df,
+            Err(e) => {
+                self.filter.error = Some(format!("Filter error: {}", e));
+                self.df.clone()
+            }
+        };
+
+        let base = if self.groupby.active {
+            match self.run_groupby_agg(raw_filtered.clone()) {
+                Ok(df) => df,
+                Err(e) => {
+                    self.filter.error = Some(format!("Groupby error: {}", e));
+                    raw_filtered
+                }
+            }
+        } else {
+            raw_filtered
+        };
+
+        // In-progress filter (user is still typing). It targets `self.headers`,
+        // which matches `base`'s schema, so it always joins the post-agg mask.
         if !self.filter.query.is_empty() {
             match FilterQuery::parse(&self.filter.query) {
                 None => {
@@ -397,24 +444,24 @@ impl App {
                         .unwrap_or_else(|| self.state.selected_column().unwrap_or(0))
                         .min(self.headers.len().saturating_sub(1));
                     let col_name = self.headers[col_idx].clone();
-                    self.filter.error = fq.validate(&col_name, &self.df);
+                    self.filter.error = fq.validate(&col_name, &base);
                     if self.filter.error.is_none() {
-                        mask = mask.and(fq.build_expr(&col_name));
+                        agg_mask = agg_mask.and(fq.build_expr(&col_name));
                     }
                 }
             }
         } else {
             self.filter.error = None;
         }
-        let filtered = match self.df.clone().lazy().filter(mask).collect() {
+
+        let filtered = match base.clone().lazy().filter(agg_mask).collect() {
             Ok(df) => df,
             Err(e) => {
                 self.filter.error = Some(format!("Filter error: {}", e));
-                self.df.clone()
+                base
             }
         };
 
-        self.viewport.row = 0;
         self.view = if self.sort.sorts.is_empty() {
             filtered
         } else {
@@ -428,6 +475,39 @@ impl App {
         if !self.search.query.is_empty() {
             self.update_search();
         }
+    }
+
+    /// Rebuilds the groupby aggregation from an arbitrary raw-schema base
+    /// (typically the already-filtered `self.df`). Uses `groupby.saved_headers`
+    /// to resolve keys/aggs so this works after `apply_groupby` has swapped in
+    /// the grouped schema.
+    fn run_groupby_agg(&self, base: DataFrame) -> PolarsResult<DataFrame> {
+        if self.groupby.keys.is_empty() || self.groupby.aggs.is_empty() {
+            return Ok(base);
+        }
+        let schema = &self.groupby.saved_headers;
+        let key_exprs: Vec<Expr> = self.groupby.keys.iter().map(|&i| col(&schema[i])).collect();
+        let agg_exprs: Vec<Expr> = self
+            .groupby
+            .aggs
+            .iter()
+            .map(|(i, func)| {
+                let name = &schema[*i];
+                match func {
+                    AggFunc::Sum => col(name).sum().alias(format!("{}_sum", name)),
+                    AggFunc::Mean => col(name).mean().alias(format!("{}_mean", name)),
+                    AggFunc::Count => col(name).count().alias(format!("{}_count", name)),
+                    AggFunc::Min => col(name).min().alias(format!("{}_min", name)),
+                    AggFunc::Max => col(name).max().alias(format!("{}_max", name)),
+                }
+            })
+            .collect();
+        let first_key = schema[self.groupby.keys[0]].clone();
+        base.lazy()
+            .group_by(key_exprs)
+            .agg(agg_exprs)
+            .sort([&first_key], SortMultipleOptions::default())
+            .collect()
     }
 
     pub fn sort_by_column(&mut self) {
@@ -670,58 +750,48 @@ impl App {
     }
 
     pub fn apply_groupby(&mut self) {
-        self.cached_stats = None;
         if self.groupby.keys.is_empty() || self.groupby.aggs.is_empty() {
             return;
         }
-        let key_exprs: Vec<Expr> = self
-            .groupby
-            .keys
+
+        // Stash the raw schema first so `run_groupby_agg` can resolve keys/aggs.
+        self.groupby.saved_headers = self.headers.clone();
+        self.groupby.saved_column_widths = self.column_widths.clone();
+
+        // Probe the grouped schema by aggregating the full raw df. Committed
+        // raw-column filters will be re-applied below via `update_filter`.
+        let grouped_df = match self.run_groupby_agg(self.df.clone()) {
+            Ok(df) => df,
+            Err(_) => {
+                self.groupby.saved_headers.clear();
+                self.groupby.saved_column_widths.clear();
+                return;
+            }
+        };
+
+        self.headers = grouped_df
+            .get_column_names()
             .iter()
-            .map(|&i| col(&self.headers[i]))
+            .map(|s| s.to_string())
             .collect();
-        let agg_exprs: Vec<Expr> = self
-            .groupby
-            .aggs
-            .iter()
-            .map(|(i, func)| {
-                let name = &self.headers[*i];
-                match func {
-                    AggFunc::Sum => col(name).sum().alias(format!("{}_sum", name)),
-                    AggFunc::Mean => col(name).mean().alias(format!("{}_mean", name)),
-                    AggFunc::Count => col(name).count().alias(format!("{}_count", name)),
-                    AggFunc::Min => col(name).min().alias(format!("{}_min", name)),
-                    AggFunc::Max => col(name).max().alias(format!("{}_max", name)),
-                }
-            })
-            .collect();
-        let first_key = self.headers[self.groupby.keys[0]].clone();
-        let result = self
-            .view
-            .clone()
-            .lazy()
-            .group_by(key_exprs)
-            .agg(agg_exprs)
-            .sort([&first_key], SortMultipleOptions::default())
-            .collect();
-        if let Ok(df) = result {
-            self.viewport.row = 0;
-            self.groupby.saved_headers = self.headers.clone();
-            self.groupby.saved_column_widths = self.column_widths.clone();
-            self.headers = df
-                .get_column_names()
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-            self.column_widths = vec![config::DEFAULT_COLUMN_WIDTH; df.width()];
-            self.sort.sorts.clear();
-            self.search.results = Vec::new();
-            self.search.cursor = 0;
-            self.view = df;
-            self.groupby.active = true;
-            self.state.select(Some(0));
-            self.state.select_column(Some(0));
-        }
+        self.column_widths = vec![config::DEFAULT_COLUMN_WIDTH; grouped_df.width()];
+
+        // Drop any sort or in-progress filter: their indices referenced the raw
+        // schema and would be meaningless under the grouped schema.
+        self.sort.sorts.clear();
+        self.sort.error = None;
+        self.filter.query.clear();
+        self.filter.col = None;
+        self.filter.error = None;
+        self.search.results = Vec::new();
+        self.search.cursor = 0;
+        self.groupby.active = true;
+        self.state.select(Some(0));
+        self.state.select_column(Some(0));
+
+        // Rebuild view through the pipeline so raw-column filters reshape the
+        // input before aggregation.
+        self.update_filter();
     }
 
     pub fn build_unique_values(&mut self) {
@@ -846,6 +916,22 @@ impl App {
         self.sort.sorts.clear();
         self.search.results = Vec::new();
         self.search.cursor = 0;
+
+        // Preserve filters still tied to raw columns; drop the ones that
+        // referenced aggregated columns that no longer exist.
+        let raw_cols: HashSet<String> = self
+            .df
+            .get_column_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        self.filter
+            .filters
+            .retain(|(col, _)| raw_cols.contains(col));
+        self.filter.query.clear();
+        self.filter.col = None;
+        self.filter.error = None;
+
         self.update_filter();
     }
 }

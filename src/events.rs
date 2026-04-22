@@ -173,14 +173,16 @@ pub fn run_app(
                             if let Some((value, _)) = app.unique_values.filtered.get(idx) {
                                 let filter = format!("= {}", value);
                                 let col = app.unique_values.col;
-                                let already_exists = app
-                                    .filter
-                                    .filters
-                                    .iter()
-                                    .any(|(c, q)| *c == col && q == &filter);
-                                if !already_exists {
-                                    app.filter.filters.push((col, filter));
-                                    app.update_filter();
+                                if let Some(col_name) = app.headers.get(col).cloned() {
+                                    let already_exists = app
+                                        .filter
+                                        .filters
+                                        .iter()
+                                        .any(|(c, q)| c == &col_name && q == &filter);
+                                    if !already_exists {
+                                        app.filter.filters.push((col_name, filter));
+                                        app.update_filter();
+                                    }
                                 }
                             }
                         }
@@ -281,14 +283,18 @@ fn to_normal_mode_with_filter(app: &mut App) {
     app.mode = Mode::Normal;
     if !app.filter.query.is_empty() {
         let col = app.filter.col.unwrap_or(0);
-        let already_exists = app
-            .filter
-            .filters
-            .iter()
-            .any(|(c, q)| *c == col && q == &app.filter.query);
-        if !already_exists {
-            app.filter.filters.push((col, app.filter.query.clone()));
-            app.update_filter();
+        if let Some(col_name) = app.headers.get(col).cloned() {
+            let already_exists = app
+                .filter
+                .filters
+                .iter()
+                .any(|(c, q)| c == &col_name && q == &app.filter.query);
+            if !already_exists {
+                app.filter
+                    .filters
+                    .push((col_name, app.filter.query.clone()));
+                app.update_filter();
+            }
         }
         app.filter.query = String::new();
     }

@@ -48,20 +48,23 @@ fn parse_delimiter(s: &str) -> Result<u8, String> {
 }
 
 fn csv_options(delimiter: u8) -> CsvReadOptions {
+    // Date detection is handled by `try_parse_date_columns` post-load so the
+    // ambiguity guard (MM/DD vs DD/MM) applies consistently.
     CsvReadOptions::default()
         .with_parse_options(CsvParseOptions::default().with_separator(delimiter))
 }
 
 fn parse_buf(buf: Vec<u8>, delimiter: Option<u8>) -> Result<DataFrame, Box<dyn std::error::Error>> {
-    match detect_format(&buf) {
-        StdinFormat::Json => Ok(JsonReader::new(std::io::Cursor::new(buf))
+    let df = match detect_format(&buf) {
+        StdinFormat::Json => JsonReader::new(std::io::Cursor::new(buf))
             .with_json_format(JsonFormat::Json)
-            .finish()?),
-        StdinFormat::Ndjson => Ok(JsonLineReader::new(std::io::Cursor::new(buf)).finish()?),
-        StdinFormat::Csv => Ok(csv_options(delimiter.unwrap_or(b','))
+            .finish()?,
+        StdinFormat::Ndjson => JsonLineReader::new(std::io::Cursor::new(buf)).finish()?,
+        StdinFormat::Csv => csv_options(delimiter.unwrap_or(b','))
             .into_reader_with_file_handle(std::io::Cursor::new(buf))
-            .finish()?),
-    }
+            .finish()?,
+    };
+    Ok(try_parse_date_columns(df))
 }
 
 fn load_dataframe(
@@ -73,28 +76,29 @@ fn load_dataframe(
         .and_then(|e| e.to_str())
         .unwrap_or("");
 
-    match ext {
-        "csv" => Ok(csv_options(delimiter.unwrap_or(b','))
+    let df = match ext {
+        "csv" => csv_options(delimiter.unwrap_or(b','))
             .try_into_reader_with_file_path(Some(file_path.into()))?
-            .finish()?),
-        "tsv" => Ok(csv_options(delimiter.unwrap_or(b'\t'))
+            .finish()?,
+        "tsv" => csv_options(delimiter.unwrap_or(b'\t'))
             .try_into_reader_with_file_path(Some(file_path.into()))?
-            .finish()?),
-        "parquet" => Ok(ParquetReader::new(std::fs::File::open(file_path)?).finish()?),
-        "json" => Ok(JsonReader::new(std::fs::File::open(file_path)?)
+            .finish()?,
+        "parquet" => ParquetReader::new(std::fs::File::open(file_path)?).finish()?,
+        "json" => JsonReader::new(std::fs::File::open(file_path)?)
             .with_json_format(JsonFormat::Json)
-            .finish()?),
-        "ndjson" | "jsonl" => Ok(JsonLineReader::new(std::fs::File::open(file_path)?).finish()?),
+            .finish()?,
+        "ndjson" | "jsonl" => JsonLineReader::new(std::fs::File::open(file_path)?).finish()?,
         _ => {
             if let Some(sep) = delimiter {
-                Ok(csv_options(sep)
+                csv_options(sep)
                     .try_into_reader_with_file_path(Some(file_path.into()))?
-                    .finish()?)
+                    .finish()?
             } else {
-                Err(format!("Unsupported file format: .{}", ext).into())
+                return Err(format!("Unsupported file format: .{}", ext).into());
             }
         }
-    }
+    };
+    Ok(try_parse_date_columns(df))
 }
 
 fn load_stdin(delimiter: Option<u8>) -> Result<DataFrame, Box<dyn std::error::Error>> {
@@ -102,6 +106,139 @@ fn load_stdin(delimiter: Option<u8>) -> Result<DataFrame, Box<dyn std::error::Er
     let mut buf = Vec::new();
     std::io::stdin().read_to_end(&mut buf)?;
     parse_buf(buf, delimiter)
+}
+
+/// Formats attempted for post-load date detection, in priority order.
+/// ISO formats come first so unambiguous inputs resolve immediately; the
+/// slash-separated American form is skipped when it conflicts with the
+/// European form (see ambiguity guard in `pick_date_format`).
+const DATE_FORMATS: &[&str] = &[
+    "%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y", "%m-%d-%Y", "%d-%b-%Y", // e.g. 03-Jan-2024
+    "%d %b %Y",
+];
+
+/// Scans string columns and replaces them with Date columns when every non-null
+/// value parses cleanly under a known format. When both `%m/%d/%Y` and
+/// `%d/%m/%Y` would succeed on every row (all values have day ≤ 12), the
+/// column is left as String to avoid guessing the wrong calendar convention.
+pub(crate) fn try_parse_date_columns(mut df: DataFrame) -> DataFrame {
+    let names: Vec<String> = df
+        .get_column_names()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    for name in &names {
+        let Ok(column) = df.column(name) else {
+            continue;
+        };
+        if column.dtype() != &DataType::String {
+            continue;
+        }
+        let non_null = column.len() - column.null_count();
+        if non_null == 0 {
+            continue;
+        }
+
+        // Cheap byte-level pre-filter: a single non-null value tells us
+        // whether the column could possibly be a date. Skips the per-column
+        // lazy plan overhead on free-text and obviously-non-date columns.
+        let Ok(str_col) = column.str() else { continue };
+        let Some(probe) = (0..str_col.len()).find_map(|i| str_col.get(i)) else {
+            continue;
+        };
+        if !looks_like_date_candidate(probe) {
+            continue;
+        }
+
+        let Some(parsed) = pick_date_format(&df, name, non_null) else {
+            continue;
+        };
+        if let Ok(new_df) = df.clone().lazy().with_column(parsed).collect() {
+            df = new_df;
+        }
+    }
+    df
+}
+
+/// Must contain at least one digit, one date-ish separator (`-`, `/`, or
+/// space), and have a length plausibly matching one of the known formats.
+fn looks_like_date_candidate(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() < 8 || b.len() > 20 {
+        return false;
+    }
+    let mut has_digit = false;
+    let mut has_sep = false;
+    for &c in b {
+        if c.is_ascii_digit() {
+            has_digit = true;
+        } else if matches!(c, b'-' | b'/' | b' ') {
+            has_sep = true;
+        }
+    }
+    has_digit && has_sep
+}
+
+/// Size of the sample used to pre-screen date formats. Small enough that a
+/// sample parse is O(1) vs. the column's row count, large enough to be
+/// representative (free-text values almost never look date-shaped).
+const DATE_SAMPLE_SIZE: usize = 32;
+
+fn pick_date_format(df: &DataFrame, name: &str, non_null: usize) -> Option<Expr> {
+    let sample_df = df
+        .clone()
+        .lazy()
+        .select([col(name).drop_nulls().head(Some(DATE_SAMPLE_SIZE))])
+        .collect()
+        .ok()?;
+    let sample_n = sample_df.column(name).ok()?.len();
+    if sample_n == 0 {
+        return None;
+    }
+
+    let parses_all = |subject: &DataFrame, fmt: &str, expected: usize| -> bool {
+        let options = StrptimeOptions {
+            format: Some(fmt.into()),
+            strict: false,
+            exact: true,
+            cache: true,
+        };
+        let expr = col(name).str().to_date(options).alias(name);
+        let Ok(parsed) = subject.clone().lazy().select([expr]).collect() else {
+            return false;
+        };
+        let Ok(c) = parsed.column(name) else {
+            return false;
+        };
+        c.len() - c.null_count() == expected
+    };
+
+    // Ambiguity guard: MM/DD/YYYY and DD/MM/YYYY look identical when every
+    // value has day ≤ 12. Check the sample first so non-slash columns pay
+    // nothing; only escalate to a full-column pass when both survive.
+    let ambiguous_slash = parses_all(&sample_df, "%m/%d/%Y", sample_n)
+        && parses_all(&sample_df, "%d/%m/%Y", sample_n)
+        && parses_all(df, "%m/%d/%Y", non_null)
+        && parses_all(df, "%d/%m/%Y", non_null);
+
+    for fmt in DATE_FORMATS {
+        if ambiguous_slash && *fmt == "%m/%d/%Y" {
+            continue;
+        }
+        if !parses_all(&sample_df, fmt, sample_n) {
+            continue;
+        }
+        if parses_all(df, fmt, non_null) {
+            let options = StrptimeOptions {
+                format: Some((*fmt).into()),
+                strict: false,
+                exact: true,
+                cache: true,
+            };
+            return Some(col(name).str().to_date(options).alias(name));
+        }
+    }
+    None
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -357,6 +494,47 @@ mod tests {
     #[test]
     fn test_fixture_unsupported_extension_errors() {
         assert!(load_dataframe("tests/fixtures/orders.csv.bak", None).is_err());
+    }
+
+    #[test]
+    fn test_try_parse_date_columns_mm_dd_yyyy() {
+        // Non-ISO date strings like "12/25/2022" are sorted lexicographically
+        // when left as strings (January lands before December of prior years).
+        // The post-load detector promotes them to Date.
+        let csv = b"id,ts\n1,01/01/2023\n2,12/25/2022\n3,12/31/2023\n".to_vec();
+        let df = parse_buf(csv, Some(b',')).expect("load");
+        assert_eq!(df.column("ts").unwrap().dtype(), &DataType::Date);
+    }
+
+    #[test]
+    fn test_try_parse_date_columns_leaves_ambiguous_as_string() {
+        // Every value has day ≤ 12, so MM/DD/YYYY and DD/MM/YYYY are
+        // indistinguishable — keep the column as String rather than guess.
+        let csv = b"id,ts\n1,01/02/2023\n2,03/04/2023\n".to_vec();
+        let df = parse_buf(csv, Some(b',')).expect("load");
+        assert_eq!(df.column("ts").unwrap().dtype(), &DataType::String);
+    }
+
+    #[test]
+    fn test_try_parse_date_columns_leaves_mixed_as_string() {
+        // Column has one value that matches no format — don't partial-parse,
+        // keep the whole column as String.
+        let csv = b"id,ts\n1,01/15/2023\n2,not-a-date\n3,02/20/2023\n".to_vec();
+        let df = parse_buf(csv, Some(b',')).expect("load");
+        assert_eq!(df.column("ts").unwrap().dtype(), &DataType::String);
+    }
+
+    #[test]
+    fn test_looks_like_date_candidate() {
+        assert!(looks_like_date_candidate("2023-01-15"));
+        assert!(looks_like_date_candidate("01/15/2023"));
+        assert!(looks_like_date_candidate("15 Jan 2023"));
+        assert!(!looks_like_date_candidate("hello"));
+        assert!(!looks_like_date_candidate("12345"));
+        assert!(!looks_like_date_candidate("a"));
+        assert!(!looks_like_date_candidate(
+            "this is a very long string value"
+        ));
     }
 
     #[test]
