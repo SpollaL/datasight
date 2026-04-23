@@ -117,6 +117,10 @@ pub fn run_app(
                     event::KeyCode::Enter if !app.plot.y_cols.is_empty() => {
                         app.mode = Mode::PlotPickX;
                     }
+                    event::KeyCode::Char('i') if !app.plot.y_cols.is_empty() => {
+                        app.plot.x_col = None;
+                        app.mode = Mode::Plot;
+                    }
                     event::KeyCode::Esc => {
                         app.plot.y_cols.clear();
                         app.mode = Mode::Normal;

@@ -366,6 +366,7 @@ fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
                 ("← →", "Navigate"),
                 ("Space", "Toggle Y"),
                 ("Enter", "Pick X"),
+                ("i", "Use row index as X"),
                 ("Esc", "Cancel"),
             ],
             &[],
@@ -718,6 +719,7 @@ fn help_text(m: &catppuccin::FlavorColors) -> Text<'static> {
         key("p", "Mark column as Y, enter pick-X mode"),
         key("←/→ h/l", "Navigate to X column (pick-X mode)"),
         key("Enter", "Confirm X column, show chart"),
+        key("i", "Plot against row index (skip pick-X mode)"),
         key("t", "Toggle line / bar chart"),
         key("Esc / p", "Close chart"),
         Line::raw(""),
@@ -1105,10 +1107,6 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     let full_area = frame.area();
     frame.render_widget(Clear, full_area);
 
-    let x_idx = match app.plot.x_col {
-        Some(x) => x,
-        None => return,
-    };
     if app.plot.y_cols.is_empty() {
         return;
     }
@@ -1121,13 +1119,17 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
 
     let max_points = (full_area.width as usize * 2).max(200);
 
-    // Extract and downsample data for every Y column.
+    // Extract and downsample data for every Y column. When x_col is None the
+    // X axis is the row index; when it's Some(idx), use that column as X.
     let all_series: Vec<(Vec<(f64, f64)>, bool)> = app
         .plot
         .y_cols
         .iter()
         .map(|&y_idx| {
-            let (raw, cat) = extract_plot_data(app, x_idx, y_idx);
+            let (raw, cat) = match app.plot.x_col {
+                Some(x_idx) => extract_plot_data(app, x_idx, y_idx),
+                None => (extract_plot_data_indexed(app, y_idx), false),
+            };
             (downsample(raw, max_points), cat)
         })
         .collect();
@@ -1144,10 +1146,9 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     // Use first non-empty series length so categorical X labels render even when the
     // first selected Y column has no numeric data.
     let first_len = nonempty.first().map(|(_, d)| d.len()).unwrap_or(0);
-    let x_labels = if x_is_categorical {
-        collect_all_x_labels(app, x_idx, first_len)
-    } else {
-        vec![]
+    let x_labels = match (x_is_categorical, app.plot.x_col) {
+        (true, Some(x_idx)) => collect_all_x_labels(app, x_idx, first_len),
+        _ => vec![],
     };
     let max_label_len = x_labels
         .iter()
@@ -1246,10 +1247,16 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     let y_labels = numeric_axis_labels(y_bounds[0], y_bounds[1], config::Y_AXIS_TICKS);
     let y_label_width = max_label_width(&y_labels);
 
+    let x_header: &str = app
+        .plot
+        .x_col
+        .map(|i| app.headers[i].as_str())
+        .unwrap_or("row index");
+
     let chart = Chart::new(datasets)
         .block(
             Block::default()
-                .title(format!(" {} vs {} ", title_y, app.headers[x_idx]))
+                .title(format!(" {} vs {} ", title_y, x_header))
                 .title_style(
                     Style::default()
                         .fg(series_color(0, m))
@@ -1262,7 +1269,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
         )
         .x_axis(
             Axis::default()
-                .title(app.headers[x_idx].as_str())
+                .title(x_header)
                 .style(Style::default().fg(c(m.subtext1)))
                 .bounds([x_min, x_max]),
         )
@@ -1529,6 +1536,26 @@ fn render_vertical_x_labels(
     }
 }
 
+/// Extract (row_index, y_value) pairs for plotting against the implicit row
+/// index. Null Y values are skipped, so gaps in the data appear as gaps in the
+/// plot rather than being drawn as 0. Returns an empty vec if the column is
+/// non-numeric.
+fn extract_plot_data_indexed(app: &App, y_idx: usize) -> Vec<(f64, f64)> {
+    let Some(ys) = app
+        .view
+        .column(&app.headers[y_idx])
+        .ok()
+        .and_then(series_to_f64)
+    else {
+        return vec![];
+    };
+    let yca = ys.f64().unwrap();
+    yca.into_iter()
+        .enumerate()
+        .filter_map(|(i, y)| Some((i as f64, y?)))
+        .collect()
+}
+
 fn extract_plot_data(app: &App, x_idx: usize, y_idx: usize) -> (Vec<(f64, f64)>, bool) {
     let x_series = app
         .view
@@ -1688,6 +1715,45 @@ mod axis_label_tests {
         // Passing 0 or 1 should clamp to 2 (min + max only).
         let labels = numeric_axis_labels(0.0, 10.0, 1);
         assert_eq!(labels.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod indexed_plot_tests {
+    use super::*;
+    use crate::app::App;
+    use polars::prelude::*;
+
+    #[test]
+    fn test_extract_plot_data_indexed_numeric() {
+        let df = df! {
+            "val" => [10.0f64, 20.0, 30.0],
+        }
+        .unwrap();
+        let app = App::new(df, "test.csv".to_string());
+        let data = extract_plot_data_indexed(&app, 0);
+        assert_eq!(data, vec![(0.0, 10.0), (1.0, 20.0), (2.0, 30.0)]);
+    }
+
+    #[test]
+    fn test_extract_plot_data_indexed_skips_nulls() {
+        // Nulls must be dropped but row indices must reflect the ORIGINAL
+        // position so gaps are visually preserved.
+        let s = Series::new("val".into(), &[Some(10.0f64), None, Some(30.0)]);
+        let df = DataFrame::new(vec![s.into()]).unwrap();
+        let app = App::new(df, "test.csv".to_string());
+        let data = extract_plot_data_indexed(&app, 0);
+        assert_eq!(data, vec![(0.0, 10.0), (2.0, 30.0)]);
+    }
+
+    #[test]
+    fn test_extract_plot_data_indexed_non_numeric_returns_empty() {
+        let df = df! {
+            "name" => ["alice", "bob"],
+        }
+        .unwrap();
+        let app = App::new(df, "test.csv".to_string());
+        assert!(extract_plot_data_indexed(&app, 0).is_empty());
     }
 }
 
