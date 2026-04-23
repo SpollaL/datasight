@@ -1090,6 +1090,11 @@ fn render_histogram(
             Axis::default()
                 .title("Count")
                 .style(Style::default().fg(c(m.subtext1)))
+                .labels(numeric_axis_labels(
+                    0.0,
+                    y_max + y_pad,
+                    config::Y_AXIS_TICKS,
+                ))
                 .bounds([0.0, y_max + y_pad]),
         );
 
@@ -1238,6 +1243,9 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
         .collect::<Vec<_>>()
         .join(", ");
 
+    let y_labels = numeric_axis_labels(y_bounds[0], y_bounds[1], config::Y_AXIS_TICKS);
+    let y_label_width = max_label_width(&y_labels);
+
     let chart = Chart::new(datasets)
         .block(
             Block::default()
@@ -1266,6 +1274,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
                     "Value"
                 })
                 .style(Style::default().fg(c(m.subtext1)))
+                .labels(y_labels)
                 .bounds(y_bounds),
         );
 
@@ -1283,6 +1292,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
             first_len,
             chart_area,
             label_area,
+            y_label_width,
             c(m.subtext1),
         );
     }
@@ -1345,6 +1355,55 @@ fn render_plot_legend(
     frame.render_widget(legend, legend_area);
 }
 
+/// Format a numeric axis tick. `range` is the span of the axis; it drives
+/// decimal precision so labels stay readable across very different magnitudes.
+/// Values >= 1e6 use an "M" suffix, >= 1e3 use "k"; otherwise decimals scale
+/// with the range so small spans get more precision.
+fn format_axis_tick(value: f64, range: f64) -> String {
+    if !value.is_finite() {
+        return String::from("–");
+    }
+    let abs = value.abs();
+    if abs >= 1e6 {
+        return format!("{:.1}M", value / 1e6);
+    }
+    if abs >= 1e3 {
+        return format!("{:.1}k", value / 1e3);
+    }
+    if range >= 100.0 {
+        format!("{:.0}", value)
+    } else if range >= 1.0 {
+        format!("{:.2}", value)
+    } else {
+        format!("{:.3}", value)
+    }
+}
+
+/// Build `ticks` evenly spaced axis labels across `[min, max]`. Ratatui's
+/// `Axis::labels` distributes them along the axis, so the first lands at `min`
+/// and the last at `max`.
+fn numeric_axis_labels(min: f64, max: f64, ticks: usize) -> Vec<Span<'static>> {
+    let ticks = ticks.max(2);
+    let range = (max - min).abs();
+    (0..ticks)
+        .map(|i| {
+            let t = i as f64 / (ticks - 1) as f64;
+            let v = min + (max - min) * t;
+            Span::raw(format_axis_tick(v, range))
+        })
+        .collect()
+}
+
+/// Widest label width in cells — used to mirror ratatui's internal Y-label
+/// gutter so overlays (like rotated X labels) can align with the plot area.
+fn max_label_width(labels: &[Span<'_>]) -> u16 {
+    labels
+        .iter()
+        .map(|s| s.content.chars().count() as u16)
+        .max()
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 pub fn extract_plot_data_pub(app: &App, x_idx: usize, y_idx: usize) -> (Vec<(f64, f64)>, bool) {
     extract_plot_data(app, x_idx, y_idx)
@@ -1392,24 +1451,32 @@ fn collect_all_x_labels(app: &App, x_idx: usize, n_points: usize) -> Vec<String>
 
 /// Render x-axis labels rotated 90° into `label_area` (one char per row).
 /// Samples down to `plot_width` labels if there are more than that many columns.
+///
+/// `y_label_gutter` is the width ratatui reserves on the left of the inner
+/// chart area for the Y-axis labels. We mirror its layout here so each rotated
+/// label column lines up with its data point.
 fn render_vertical_x_labels(
     frame: &mut Frame,
     labels: &[String],
     n_data_points: usize,
     chart_area: Rect,
     label_area: Rect,
+    y_label_gutter: u16,
     color: Color,
 ) {
     if labels.is_empty() || n_data_points == 0 || label_area.height == 0 {
         return;
     }
 
-    // The plot's x range covers the inner chart width minus the left border.
-    // No explicit y-axis labels → inner area starts right after the left border.
-    let plot_x = chart_area.x + 1;
+    // Ratatui's chart reserves: 1 border + y_label_gutter + 1 axis column on the
+    // left (the +1 axis only when y-axis labels are present, which they always
+    // are since we added the numeric scale).
+    let left_reserved =
+        config::CHART_BORDER_WIDTH + y_label_gutter + if y_label_gutter > 0 { 1 } else { 0 };
+    let plot_x = chart_area.x + left_reserved;
     let plot_w = chart_area
         .width
-        .saturating_sub(config::CHART_BORDER_WIDTH * 2);
+        .saturating_sub(left_reserved + config::CHART_BORDER_WIDTH);
     if plot_w == 0 {
         return;
     }
@@ -1574,6 +1641,53 @@ mod histogram_tests {
         let data = compute_histogram_pub(&app, 0).unwrap();
         let total: f64 = data.iter().map(|(_, c)| c).sum();
         assert_eq!(total as usize, 10);
+    }
+}
+
+#[cfg(test)]
+mod axis_label_tests {
+    use super::*;
+
+    #[test]
+    fn test_format_axis_tick_small_range() {
+        assert_eq!(format_axis_tick(0.5, 1.0), "0.50");
+        assert_eq!(format_axis_tick(0.001, 0.01), "0.001");
+    }
+
+    #[test]
+    fn test_format_axis_tick_integer_range() {
+        assert_eq!(format_axis_tick(42.0, 500.0), "42");
+        assert_eq!(format_axis_tick(3.14, 50.0), "3.14");
+    }
+
+    #[test]
+    fn test_format_axis_tick_k_and_m_suffix() {
+        assert_eq!(format_axis_tick(1_500.0, 10_000.0), "1.5k");
+        assert_eq!(format_axis_tick(2_500_000.0, 5_000_000.0), "2.5M");
+        assert_eq!(format_axis_tick(-1_500.0, 10_000.0), "-1.5k");
+    }
+
+    #[test]
+    fn test_format_axis_tick_non_finite() {
+        assert_eq!(format_axis_tick(f64::NAN, 1.0), "–");
+        assert_eq!(format_axis_tick(f64::INFINITY, 1.0), "–");
+    }
+
+    #[test]
+    fn test_numeric_axis_labels_endpoints_and_count() {
+        let labels = numeric_axis_labels(0.0, 100.0, 5);
+        assert_eq!(labels.len(), 5);
+        assert_eq!(labels[0].content, "0");
+        assert_eq!(labels[4].content, "100");
+        // Midpoint must be 50 (range 100 → integer format).
+        assert_eq!(labels[2].content, "50");
+    }
+
+    #[test]
+    fn test_numeric_axis_labels_minimum_tick_count() {
+        // Passing 0 or 1 should clamp to 2 (min + max only).
+        let labels = numeric_axis_labels(0.0, 10.0, 1);
+        assert_eq!(labels.len(), 2);
     }
 }
 
