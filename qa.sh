@@ -209,6 +209,7 @@ start_app "tests/fixtures/orders.csv"
 send "llll"   # region col
 send "u" 0.3
 assert_contains "E/popup-open" "Unique"
+send "/"
 send "Nor"
 sleep 0.15
 assert_contains "E/filter-narrow" "North"

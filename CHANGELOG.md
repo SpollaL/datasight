@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-04-23
+
+### Added
+- Numeric Y-axis scale on line/bar/histogram plots with K/M suffix formatting.
+- Plot a column against its row index — press `i` in pick-Y mode.
+- Searchable column inspector: press `/` in unique values mode to filter the list by substring; press `/` in column inspector (`i`) to search columns by name.
+
 ## [0.4.1] - 2026-04-22
 
 ### Fixed

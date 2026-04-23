@@ -37,6 +37,8 @@ and the null fixture (`tests/fixtures/orders_nulls.csv`).
 
 A release should only be tagged after `qa.sh` exits 0 **and** `cargo test` passes.
 
+When implementing a new feature that changes keybindings, adds modes, or modifies existing TUI interactions, update `qa.sh` to cover the new behaviour before opening the PR.
+
 ## Architecture
 
 Source files under `src/`:
