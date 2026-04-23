@@ -160,68 +160,98 @@ pub fn run_app(
                     event::KeyCode::Char('q') => app.should_quit = true,
                     _ => {}
                 },
-                Mode::UniqueValues => match key.code {
-                    event::KeyCode::Esc => app.mode = Mode::Normal,
-                    event::KeyCode::Down | event::KeyCode::Char('j') => {
-                        app.unique_values.state.select_next()
-                    }
-                    event::KeyCode::Up | event::KeyCode::Char('k') => {
-                        app.unique_values.state.select_previous()
-                    }
-                    event::KeyCode::Backspace => {
-                        app.unique_values.query.pop();
-                        app.filter_unique_values();
-                    }
-                    event::KeyCode::Enter => {
-                        if let Some(idx) = app.unique_values.state.selected() {
-                            if let Some((value, _)) = app.unique_values.filtered.get(idx) {
-                                let filter = format!("= {}", value);
-                                let col = app.unique_values.col;
-                                if let Some(col_name) = app.headers.get(col).cloned() {
-                                    let already_exists = app
-                                        .filter
-                                        .filters
-                                        .iter()
-                                        .any(|(c, q)| c == &col_name && q == &filter);
-                                    if !already_exists {
-                                        app.filter.filters.push((col_name, filter));
-                                        app.update_filter();
-                                    }
-                                }
+                Mode::UniqueValues => {
+                    if app.unique_values.searching {
+                        match key.code {
+                            event::KeyCode::Esc => app.unique_values.searching = false,
+                            event::KeyCode::Enter => apply_unique_value_filter(&mut app),
+                            event::KeyCode::Down => app.unique_values.state.select_next(),
+                            event::KeyCode::Up => app.unique_values.state.select_previous(),
+                            event::KeyCode::Home => app.unique_values.state.select_first(),
+                            event::KeyCode::End => app.unique_values.state.select_last(),
+                            event::KeyCode::Backspace => {
+                                app.unique_values.query.pop();
+                                app.filter_unique_values();
                             }
+                            event::KeyCode::Char(c) => {
+                                app.unique_values.query.push(c);
+                                app.filter_unique_values();
+                            }
+                            _ => {}
                         }
-                        app.mode = Mode::Normal;
+                    } else {
+                        match key.code {
+                            event::KeyCode::Esc => app.mode = Mode::Normal,
+                            event::KeyCode::Enter => apply_unique_value_filter(&mut app),
+                            event::KeyCode::Down | event::KeyCode::Char('j') => {
+                                app.unique_values.state.select_next()
+                            }
+                            event::KeyCode::Up | event::KeyCode::Char('k') => {
+                                app.unique_values.state.select_previous()
+                            }
+                            event::KeyCode::Char('g') | event::KeyCode::Home => {
+                                app.unique_values.state.select_first()
+                            }
+                            event::KeyCode::Char('G') | event::KeyCode::End => {
+                                app.unique_values.state.select_last()
+                            }
+                            event::KeyCode::Char('/') => {
+                                app.unique_values.query.clear();
+                                app.unique_values.searching = true;
+                                app.filter_unique_values();
+                            }
+                            event::KeyCode::Char('q') => app.should_quit = true,
+                            _ => {}
+                        }
                     }
-                    event::KeyCode::Char(c) => {
-                        app.unique_values.query.push(c);
-                        app.filter_unique_values();
+                }
+                Mode::ColumnsView => {
+                    if app.columns_view.searching {
+                        match key.code {
+                            event::KeyCode::Esc => app.columns_view.searching = false,
+                            event::KeyCode::Enter => jump_to_selected_column(&mut app),
+                            event::KeyCode::Down => app.columns_view.state.select_next(),
+                            event::KeyCode::Up => app.columns_view.state.select_previous(),
+                            event::KeyCode::Home => app.columns_view.state.select_first(),
+                            event::KeyCode::End => app.columns_view.state.select_last(),
+                            event::KeyCode::Backspace => {
+                                app.columns_view.query.pop();
+                                app.filter_columns_profile();
+                            }
+                            event::KeyCode::Char(c) => {
+                                app.columns_view.query.push(c);
+                                app.filter_columns_profile();
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        match key.code {
+                            event::KeyCode::Esc | event::KeyCode::Char('i') => {
+                                app.mode = Mode::Normal
+                            }
+                            event::KeyCode::Enter => jump_to_selected_column(&mut app),
+                            event::KeyCode::Down | event::KeyCode::Char('j') => {
+                                app.columns_view.state.select_next()
+                            }
+                            event::KeyCode::Up | event::KeyCode::Char('k') => {
+                                app.columns_view.state.select_previous()
+                            }
+                            event::KeyCode::Char('g') | event::KeyCode::Home => {
+                                app.columns_view.state.select_first()
+                            }
+                            event::KeyCode::Char('G') | event::KeyCode::End => {
+                                app.columns_view.state.select_last()
+                            }
+                            event::KeyCode::Char('/') => {
+                                app.columns_view.query.clear();
+                                app.columns_view.searching = true;
+                                app.filter_columns_profile();
+                            }
+                            event::KeyCode::Char('q') => app.should_quit = true,
+                            _ => {}
+                        }
                     }
-                    _ => {}
-                },
-                Mode::ColumnsView => match key.code {
-                    event::KeyCode::Down | event::KeyCode::Char('j') => {
-                        app.columns_view.state.select_next()
-                    }
-                    event::KeyCode::Up | event::KeyCode::Char('k') => {
-                        app.columns_view.state.select_previous()
-                    }
-                    event::KeyCode::Char('g') | event::KeyCode::Home => {
-                        app.columns_view.state.select_first()
-                    }
-                    event::KeyCode::Char('G') | event::KeyCode::End => {
-                        app.columns_view.state.select_last()
-                    }
-                    event::KeyCode::Enter => {
-                        let col = app.columns_view.state.selected().unwrap_or(0);
-                        app.state.select_column(Some(col));
-                        app.mode = Mode::Normal;
-                    }
-                    event::KeyCode::Esc | event::KeyCode::Char('i') => {
-                        app.mode = Mode::Normal;
-                    }
-                    event::KeyCode::Char('q') => app.should_quit = true,
-                    _ => {}
-                },
+                }
                 Mode::Filter => match key.code {
                     event::KeyCode::Backspace => pop_char_from_filter_query(&mut app),
                     event::KeyCode::Enter => to_normal_mode_with_filter(&mut app),
@@ -346,4 +376,34 @@ fn go_to_previous_search_result(app: &mut App) {
     };
     app.state
         .select(Some(app.search.results[app.search.cursor]));
+}
+
+fn jump_to_selected_column(app: &mut App) {
+    if let Some(sel) = app.columns_view.state.selected() {
+        if let Some(&col) = app.columns_view.filtered.get(sel) {
+            app.state.select_column(Some(col));
+        }
+    }
+    app.mode = Mode::Normal;
+}
+
+fn apply_unique_value_filter(app: &mut App) {
+    if let Some(idx) = app.unique_values.state.selected() {
+        if let Some((value, _)) = app.unique_values.filtered.get(idx) {
+            let filter = format!("= {}", value);
+            let col = app.unique_values.col;
+            if let Some(col_name) = app.headers.get(col).cloned() {
+                let already_exists = app
+                    .filter
+                    .filters
+                    .iter()
+                    .any(|(c, q)| c == &col_name && q == &filter);
+                if !already_exists {
+                    app.filter.filters.push((col_name, filter));
+                    app.update_filter();
+                }
+            }
+        }
+    }
+    app.mode = Mode::Normal;
 }

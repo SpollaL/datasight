@@ -121,12 +121,16 @@ pub struct UniqueValuesState {
     pub state: TableState,
     pub col: usize,
     pub truncated: bool,
+    pub searching: bool,
 }
 
 #[derive(Default)]
 pub struct ColumnsViewState {
     pub profile: Vec<ColumnProfile>,
+    pub filtered: Vec<usize>,
+    pub query: String,
     pub state: TableState,
+    pub searching: bool,
 }
 
 #[derive(Default)]
@@ -798,6 +802,7 @@ impl App {
         let col_idx = self.state.selected_column().unwrap_or(0);
         self.unique_values.col = col_idx;
         self.unique_values.query = String::new();
+        self.unique_values.searching = false;
 
         let counts: Vec<(String, usize)> = (|| {
             let s = self
@@ -891,7 +896,38 @@ impl App {
                 }
             })
             .collect();
-        self.columns_view.state.select(Some(0));
+        self.columns_view.query.clear();
+        self.columns_view.searching = false;
+        self.columns_view.filtered = (0..self.columns_view.profile.len()).collect();
+        self.columns_view
+            .state
+            .select(if self.columns_view.filtered.is_empty() {
+                None
+            } else {
+                Some(0)
+            });
+    }
+
+    pub fn filter_columns_profile(&mut self) {
+        let q = self.columns_view.query.to_lowercase();
+        self.columns_view.filtered = if q.is_empty() {
+            (0..self.columns_view.profile.len()).collect()
+        } else {
+            self.columns_view
+                .profile
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.name.to_lowercase().contains(&q))
+                .map(|(i, _)| i)
+                .collect()
+        };
+        self.columns_view
+            .state
+            .select(if self.columns_view.filtered.is_empty() {
+                None
+            } else {
+                Some(0)
+            });
     }
 
     pub fn plot_type_label(&self) -> &str {
