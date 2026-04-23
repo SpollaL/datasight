@@ -377,23 +377,52 @@ fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
         ),
         // render_plot() returns early in ui() and renders its own status bar.
         Mode::Plot => unreachable!("shortcut_bar is not called in Plot mode"),
-        Mode::ColumnsView => (
-            &[
-                ("j / k", "Navigate"),
-                ("Enter", "Jump to column"),
-                ("Esc / i", "Close"),
-            ],
-            &[],
-        ),
-        Mode::UniqueValues => (
-            &[
-                ("type", "Search"),
-                ("j / k", "Navigate"),
-                ("Enter", "Apply filter"),
-                ("Esc", "Close"),
-            ],
-            &[],
-        ),
+        Mode::ColumnsView => {
+            if app.columns_view.searching {
+                (
+                    &[
+                        ("type", "Search"),
+                        ("↑ ↓", "Navigate"),
+                        ("Enter", "Jump to column"),
+                        ("Esc", "Exit search"),
+                    ][..],
+                    &[][..],
+                )
+            } else {
+                (
+                    &[
+                        ("/", "Search"),
+                        ("j / k", "Navigate"),
+                        ("Enter", "Jump to column"),
+                        ("Esc / i", "Close"),
+                    ][..],
+                    &[][..],
+                )
+            }
+        }
+        Mode::UniqueValues => {
+            if app.unique_values.searching {
+                (
+                    &[
+                        ("type", "Search"),
+                        ("↑ ↓", "Navigate"),
+                        ("Enter", "Apply filter"),
+                        ("Esc", "Exit search"),
+                    ][..],
+                    &[][..],
+                )
+            } else {
+                (
+                    &[
+                        ("/", "Search"),
+                        ("j / k", "Navigate"),
+                        ("Enter", "Apply filter"),
+                        ("Esc", "Close"),
+                    ][..],
+                    &[][..],
+                )
+            }
+        }
     };
 
     let primary_key = Style::default()
@@ -475,20 +504,34 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
         // render_plot() returns early in ui() and renders its own status bar.
         Mode::Plot => unreachable!("get_bar is not called in Plot mode"),
         Mode::UniqueValues => (
-            format!(
-                " Unique values: {}  |  type to search  |  Enter filter  |  Esc close ",
-                app.headers
+            {
+                let col = app
+                    .headers
                     .get(app.unique_values.col)
-                    .map_or("", |s| s.as_str())
-            ),
+                    .map_or("", |s| s.as_str());
+                if app.unique_values.searching {
+                    format!(
+                        " Unique values: {}  |  type to search  |  ↑/↓ navigate  |  Enter filter  |  Esc exit search ",
+                        col
+                    )
+                } else {
+                    format!(
+                        " Unique values: {}  |  / search  |  j/k navigate  |  Enter filter  |  Esc close ",
+                        col
+                    )
+                }
+            },
             Style::default()
                 .bg(c(m.teal))
                 .fg(c(m.base))
                 .add_modifier(Modifier::BOLD),
         ),
         Mode::ColumnsView => (
-            " Column Inspector  |  j/k navigate  |  Enter jump to column  |  Esc / i close "
-                .to_string(),
+            if app.columns_view.searching {
+                " Column Inspector  |  type to search  |  ↑/↓ navigate  |  Enter jump to column  |  Esc exit search ".to_string()
+            } else {
+                " Column Inspector  |  / search  |  j/k navigate  |  Enter jump to column  |  Esc close ".to_string()
+            },
             Style::default()
                 .bg(c(m.green))
                 .fg(c(m.base))
@@ -771,12 +814,24 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::
         .constraints([Constraint::Length(2), Constraint::Min(1)])
         .split(inner);
 
-    // Search field
-    let search_text = format!(" Search: {}_ ", app.unique_values.query);
-    frame.render_widget(
-        Paragraph::new(search_text).style(Style::default().bg(c(m.surface0)).fg(c(m.text))),
-        zones[0],
-    );
+    // Search field: show cursor when actively searching, otherwise hint
+    let (search_text, search_style) = if app.unique_values.searching {
+        (
+            format!(" Search: {}_ ", app.unique_values.query),
+            Style::default().bg(c(m.surface0)).fg(c(m.text)),
+        )
+    } else if app.unique_values.query.is_empty() {
+        (
+            " press / to search ".to_string(),
+            Style::default().bg(c(m.surface0)).fg(c(m.subtext0)),
+        )
+    } else {
+        (
+            format!(" Search: {} (press / to edit) ", app.unique_values.query),
+            Style::default().bg(c(m.surface0)).fg(c(m.subtext0)),
+        )
+    };
+    frame.render_widget(Paragraph::new(search_text).style(search_style), zones[0]);
 
     // Values table
     let header = Row::new([
@@ -827,11 +882,33 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorC
 
     let chunks = Layout::default()
         .direction(ratatui::layout::Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
         .split(full_area);
 
+    let (search_text, search_style) = if app.columns_view.searching {
+        (
+            format!(" Search: {}_ ", app.columns_view.query),
+            Style::default().bg(c(m.surface0)).fg(c(m.text)),
+        )
+    } else if app.columns_view.query.is_empty() {
+        (
+            " press / to search ".to_string(),
+            Style::default().bg(c(m.surface0)).fg(c(m.subtext0)),
+        )
+    } else {
+        (
+            format!(" Search: {} (press / to edit) ", app.columns_view.query),
+            Style::default().bg(c(m.surface0)).fg(c(m.subtext0)),
+        )
+    };
+    frame.render_widget(Paragraph::new(search_text).style(search_style), chunks[0]);
+
     let (bar_text, bar_style) = get_bar(app, m);
-    frame.render_widget(Paragraph::new(bar_text).style(bar_style), chunks[1]);
+    frame.render_widget(Paragraph::new(bar_text).style(bar_style), chunks[2]);
 
     let header = Row::new([
         Cell::from("Column").style(
@@ -885,10 +962,15 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorC
 
     let rows: Vec<Row> = app
         .columns_view
-        .profile
+        .filtered
         .iter()
         .enumerate()
-        .map(|(i, p)| profile_row(p, i, m))
+        .filter_map(|(i, &idx)| {
+            app.columns_view
+                .profile
+                .get(idx)
+                .map(|p| profile_row(p, i, m))
+        })
         .collect();
 
     let widths = [
@@ -903,11 +985,18 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorC
         Constraint::Length(10),
     ];
 
+    let title = format!(
+        " Column Inspector — {} ({}/{} matched) ",
+        app.file_path,
+        app.columns_view.filtered.len(),
+        app.columns_view.profile.len()
+    );
+
     let table = Table::new(rows, widths)
         .header(header)
         .block(
             Block::default()
-                .title(format!(" Column Inspector — {} ", app.file_path))
+                .title(title)
                 .title_style(Style::default().fg(c(m.green)).add_modifier(Modifier::BOLD))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
@@ -921,7 +1010,7 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorC
                 .add_modifier(Modifier::BOLD),
         );
 
-    frame.render_stateful_widget(table, chunks[0], &mut app.columns_view.state);
+    frame.render_stateful_widget(table, chunks[1], &mut app.columns_view.state);
 }
 
 fn profile_row<'a>(p: &'a ColumnProfile, idx: usize, m: &catppuccin::FlavorColors) -> Row<'a> {

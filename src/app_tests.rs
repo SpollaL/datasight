@@ -1112,4 +1112,68 @@ mod cycle_agg_tests {
         app.cycle_groupby_agg(); // should be a no-op
         assert!(!app.groupby.aggs.contains_key(&0));
     }
+
+    fn make_columns_app() -> App {
+        let df = df! {
+            "first_name" => ["Alice", "Bob"],
+            "last_name"  => ["Smith", "Jones"],
+            "age"        => [30i64, 25],
+            "city"       => ["NY", "LA"],
+        }
+        .unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+        app.build_columns_profile();
+        app
+    }
+
+    #[test]
+    fn test_filter_columns_profile_empty_query_shows_all() {
+        let mut app = make_columns_app();
+        app.columns_view.query.clear();
+        app.filter_columns_profile();
+        assert_eq!(app.columns_view.filtered, vec![0, 1, 2, 3]);
+        assert_eq!(app.columns_view.state.selected(), Some(0));
+    }
+
+    #[test]
+    fn test_filter_columns_profile_substring_match() {
+        let mut app = make_columns_app();
+        app.columns_view.query = "name".to_string();
+        app.filter_columns_profile();
+        // first_name (0), last_name (1)
+        assert_eq!(app.columns_view.filtered, vec![0, 1]);
+    }
+
+    #[test]
+    fn test_filter_columns_profile_case_insensitive() {
+        let mut app = make_columns_app();
+        app.columns_view.query = "CITY".to_string();
+        app.filter_columns_profile();
+        assert_eq!(app.columns_view.filtered, vec![3]);
+    }
+
+    #[test]
+    fn test_filter_columns_profile_no_match_clears_selection() {
+        let mut app = make_columns_app();
+        app.columns_view.query = "xyz".to_string();
+        app.filter_columns_profile();
+        assert!(app.columns_view.filtered.is_empty());
+        assert_eq!(app.columns_view.state.selected(), None);
+    }
+
+    #[test]
+    fn test_build_columns_profile_resets_query_and_filtered() {
+        let mut app = make_columns_app();
+        app.columns_view.query = "stale".to_string();
+        app.columns_view.filtered = vec![];
+        app.columns_view.searching = true;
+        app.build_columns_profile();
+        assert!(app.columns_view.query.is_empty());
+        assert!(!app.columns_view.searching);
+        assert_eq!(
+            app.columns_view.filtered.len(),
+            app.columns_view.profile.len()
+        );
+        assert_eq!(app.columns_view.state.selected(), Some(0));
+    }
 }
