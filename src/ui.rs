@@ -1767,7 +1767,11 @@ mod histogram_tests {
         let df = DataFrame::new(vec![s.into()]).unwrap();
         let app = App::new(df, "test.parquet".to_string());
         let result = compute_histogram_pub(&app, 0);
-        assert!(result.is_ok(), "Decimal column should be plottable: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Decimal column should be plottable: {:?}",
+            result
+        );
     }
 }
 
