@@ -1512,7 +1512,7 @@ pub fn compute_histogram_pub(app: &App, y_idx: usize) -> Result<Vec<(f64, f64)>,
 
 fn series_to_f64(col: &polars::prelude::Column) -> Option<polars::prelude::Series> {
     let s = col.as_series()?;
-    if s.dtype().is_primitive_numeric() {
+    if s.dtype().is_primitive_numeric() || matches!(s.dtype(), DataType::Decimal(_, _)) {
         s.cast(&DataType::Float64).ok()
     } else {
         None
@@ -1757,6 +1757,17 @@ mod histogram_tests {
         let data = compute_histogram_pub(&app, 0).unwrap();
         let total: f64 = data.iter().map(|(_, c)| c).sum();
         assert_eq!(total as usize, 10);
+    }
+
+    #[test]
+    fn test_compute_histogram_decimal_returns_ok() {
+        let s = Series::new("price".into(), &[1.5f64, 2.5, 3.5])
+            .cast(&DataType::Decimal(Some(10), Some(2)))
+            .unwrap();
+        let df = DataFrame::new(vec![s.into()]).unwrap();
+        let app = App::new(df, "test.parquet".to_string());
+        let result = compute_histogram_pub(&app, 0);
+        assert!(result.is_ok(), "Decimal column should be plottable: {:?}", result);
     }
 }
 
