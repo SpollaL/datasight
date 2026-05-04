@@ -50,7 +50,10 @@ fn parse_delimiter(s: &str) -> Result<u8, String> {
 fn csv_options(delimiter: u8) -> CsvReadOptions {
     // Date detection is handled by `try_parse_date_columns` post-load so the
     // ambiguity guard (MM/DD vs DD/MM) applies consistently.
+    // infer_schema_length=None scans all rows; the default of 100 misclassifies
+    // columns whose first non-null value appears beyond row 100.
     CsvReadOptions::default()
+        .with_infer_schema_length(None)
         .with_parse_options(CsvParseOptions::default().with_separator(delimiter))
 }
 
