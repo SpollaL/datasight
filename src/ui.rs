@@ -27,6 +27,16 @@ fn c(color: catppuccin::Color) -> Color {
     Color::Rgb(color.rgb.r, color.rgb.g, color.rgb.b)
 }
 
+const NULL_GLYPH: &str = "∅";
+
+// None → muted ∅ glyph so a real null is distinguishable from an empty-string cell.
+fn format_cell<'a>(value: Option<&str>, m: &catppuccin::FlavorColors) -> Cell<'a> {
+    match value {
+        None => Cell::from(NULL_GLYPH).style(Style::default().fg(c(m.overlay1))),
+        Some(s) => Cell::from(s.to_string()),
+    }
+}
+
 pub fn ui(frame: &mut Frame, app: &mut App) {
     let m = &PALETTE.mocha.colors;
 
@@ -122,13 +132,11 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
                 str_columns
                     .iter()
                     .map(|s| {
-                        Cell::from(
-                            s.as_ref()
-                                .and_then(|series| series.str().ok())
-                                .and_then(|ca| ca.get(i))
-                                .unwrap_or("")
-                                .to_string(),
-                        )
+                        let opt = s
+                            .as_ref()
+                            .and_then(|series| series.str().ok())
+                            .and_then(|ca| ca.get(i));
+                        format_cell(opt, m)
                     })
                     .collect::<Vec<Cell>>(),
             )
@@ -1786,6 +1794,7 @@ mod axis_label_tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_format_axis_tick_integer_range() {
         assert_eq!(format_axis_tick(42.0, 500.0), "42");
         assert_eq!(format_axis_tick(3.14, 50.0), "3.14");
@@ -1911,5 +1920,95 @@ mod count_visible_tests {
         // widths[0]=10, widths[1]=10 → need 10+11=21. available=21 → 2 fit; widths[2] needs 11 more → 32 > 21.
         let widths = vec![10u16, 10, 10];
         assert_eq!(count_visible_from(&widths, 0, 21), 2);
+    }
+}
+
+#[cfg(test)]
+mod null_render_tests {
+    use super::*;
+    use crate::app::App;
+    use polars::prelude::*;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    #[test]
+    fn test_null_cell_renders_glyph_with_muted_fg() {
+        // One column, three rows: a value, an empty string, a real null.
+        let s = Series::new("col".into(), &[Some("alice"), Some(""), None]);
+        let df = DataFrame::new(vec![s.into()]).unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let expected_fg = c(PALETTE.mocha.colors.overlay1);
+
+        let area = buffer.area;
+        let mut null_cells = 0;
+        for y in 0..area.height {
+            for x in 0..area.width {
+                let cell = buffer.cell(Position::new(x, y)).unwrap();
+                if cell.symbol() == NULL_GLYPH {
+                    null_cells += 1;
+                    assert_eq!(
+                        cell.fg, expected_fg,
+                        "null glyph at ({x},{y}) should use the muted foreground"
+                    );
+                }
+            }
+        }
+        // Exactly one null in the data → exactly one ∅ glyph in the buffer.
+        assert_eq!(null_cells, 1, "expected one ∅ in the rendered buffer");
+    }
+
+    #[test]
+    fn test_empty_string_does_not_render_null_glyph() {
+        // Empty strings must stay blank — only real nulls get the glyph.
+        let s = Series::new("col".into(), &[Some("alice"), Some(""), Some("bob")]);
+        let df = DataFrame::new(vec![s.into()]).unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let area = buffer.area;
+        for y in 0..area.height {
+            for x in 0..area.width {
+                let cell = buffer.cell(Position::new(x, y)).unwrap();
+                assert_ne!(
+                    cell.symbol(),
+                    NULL_GLYPH,
+                    "no ∅ glyph should appear when every value is a real string"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_numeric_null_renders_glyph() {
+        // Numeric nulls go through the same cast-to-String path; they must also
+        // render as ∅ rather than a blank cell.
+        let s = Series::new("val".into(), &[Some(1i64), None, Some(3)]);
+        let df = DataFrame::new(vec![s.into()]).unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let null_count = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                buffer
+                    .cell(Position::new(x, y))
+                    .map_or(false, |c| c.symbol() == NULL_GLYPH)
+            })
+            .count();
+        assert_eq!(null_count, 1, "one numeric null should render as one ∅");
     }
 }
