@@ -50,7 +50,11 @@ fn parse_delimiter(s: &str) -> Result<u8, String> {
 fn csv_options(delimiter: u8) -> CsvReadOptions {
     // Date detection is handled by `try_parse_date_columns` post-load so the
     // ambiguity guard (MM/DD vs DD/MM) applies consistently.
+    // 10_000-row sample catches sparse columns whose first non-null value
+    // appears beyond the default 100-row window, without the 50x+ startup
+    // cost of None (full-file scan) on large CSVs.
     CsvReadOptions::default()
+        .with_infer_schema_length(Some(10_000))
         .with_parse_options(CsvParseOptions::default().with_separator(delimiter))
 }
 
@@ -544,5 +548,86 @@ mod tests {
             .expect("should load with explicit delimiter");
         assert_eq!(df.height(), 10);
         assert_eq!(df.width(), 12);
+    }
+
+    // Verifies two things about infer_schema_length(None):
+    // 1. Correctness: sparse columns (first non-null beyond row 100) get the right dtype.
+    // 2. Performance: measures overhead vs the default Some(100) so we can track it.
+    //    Run with `cargo test -- --nocapture` to see the timing output.
+    #[test]
+    fn test_infer_schema_length_none_correctness_and_perf() {
+        use std::time::Instant;
+
+        // 200K rows; sparse_val is null for the first 150 rows, then integers.
+        // With infer_schema_length(Some(100)) all sampled rows are null → Null dtype.
+        // With infer_schema_length(None) Polars sees the integers → Int64 dtype.
+        const ROWS: usize = 200_000;
+        const SPARSE_START: usize = 150;
+
+        let mut csv = String::with_capacity(ROWS * 16);
+        csv.push_str("id,sparse_val\n");
+        for i in 0..ROWS {
+            if i < SPARSE_START {
+                csv.push_str(&format!("{},\n", i));
+            } else {
+                csv.push_str(&format!("{},{}\n", i, i * 2));
+            }
+        }
+        let bytes = csv.into_bytes();
+
+        let parse = |limit: Option<usize>| {
+            CsvReadOptions::default()
+                .with_infer_schema_length(limit)
+                .with_parse_options(CsvParseOptions::default().with_separator(b','))
+                .into_reader_with_file_handle(std::io::Cursor::new(bytes.clone()))
+                .finish()
+                .expect("parse failed")
+        };
+
+        let t0 = Instant::now();
+        let df_full = parse(None);
+        let dur_full = t0.elapsed();
+
+        let t1 = Instant::now();
+        let df_10k = parse(Some(10_000));
+        let dur_10k = t1.elapsed();
+
+        let t2 = Instant::now();
+        let df_100 = parse(Some(100));
+        let dur_100 = t2.elapsed();
+
+        let dtype_full = df_full.column("sparse_val").unwrap().dtype().clone();
+        let dtype_10k = df_10k.column("sparse_val").unwrap().dtype().clone();
+        let dtype_100 = df_100.column("sparse_val").unwrap().dtype().clone();
+
+        eprintln!(
+            "infer_schema_length=None        {:>8.2?}  sparse_val = {:?}",
+            dur_full, dtype_full
+        );
+        eprintln!(
+            "infer_schema_length=Some(10000) {:>8.2?}  sparse_val = {:?}  (current)",
+            dur_10k, dtype_10k
+        );
+        eprintln!(
+            "infer_schema_length=Some(100)   {:>8.2?}  sparse_val = {:?}",
+            dur_100, dtype_100
+        );
+        eprintln!(
+            "None vs Some(10000): {:.1}x  |  None vs Some(100): {:.1}x",
+            dur_full.as_secs_f64() / dur_10k.as_secs_f64().max(0.001),
+            dur_full.as_secs_f64() / dur_100.as_secs_f64().max(0.001),
+        );
+
+        assert_eq!(dtype_full, DataType::Int64, "full scan must infer Int64");
+        assert_eq!(
+            dtype_10k,
+            DataType::Int64,
+            "10k scan must infer Int64 (sparse_start=150)"
+        );
+        assert_ne!(
+            dtype_100,
+            DataType::Int64,
+            "100-row scan must miss sparse Int64"
+        );
     }
 }

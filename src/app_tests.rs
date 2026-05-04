@@ -846,6 +846,16 @@ mod validate_filter_tests {
         let fq = FilterQuery::parse("Ali").unwrap();
         assert!(fq.validate("name", &make_df()).is_none());
     }
+
+    #[test]
+    fn test_numeric_op_on_decimal_col_valid() {
+        let s = Series::new("price".into(), &[1.5f64, 2.5])
+            .cast(&DataType::Decimal(Some(10), Some(2)))
+            .unwrap();
+        let df = DataFrame::new(vec![s.into()]).unwrap();
+        let fq = FilterQuery::parse("> 1").unwrap();
+        assert!(fq.validate("price", &df).is_none());
+    }
 }
 
 mod filter_query_tests {

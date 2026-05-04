@@ -236,7 +236,9 @@ impl<'a> FilterQuery<'a> {
             .column(col_name)
             .ok()
             .and_then(|c| c.as_series())
-            .map(|s| s.dtype().is_primitive_numeric())
+            .map(|s| {
+                s.dtype().is_primitive_numeric() || matches!(s.dtype(), DataType::Decimal(_, _))
+            })
             .unwrap_or(false);
         if !is_numeric_col {
             return Some(format!("'{}' can only filter numeric columns", self.op));
