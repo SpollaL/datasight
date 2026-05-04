@@ -27,13 +27,9 @@ fn c(color: catppuccin::Color) -> Color {
     Color::Rgb(color.rgb.r, color.rgb.g, color.rgb.b)
 }
 
-/// Glyph rendered in main-table cells whose underlying value is null,
-/// so callers can tell a real null apart from an empty string.
 const NULL_GLYPH: &str = "∅";
 
-/// Builds a table cell from an optional string value. `None` renders as the
-/// muted [`NULL_GLYPH`] so a real null is visually distinguishable from an
-/// empty-string cell.
+// None → muted ∅ glyph so a real null is distinguishable from an empty-string cell.
 fn format_cell<'a>(value: Option<&str>, m: &catppuccin::FlavorColors) -> Cell<'a> {
     match value {
         None => Cell::from(NULL_GLYPH).style(Style::default().fg(c(m.overlay1))),
@@ -1990,5 +1986,29 @@ mod null_render_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_numeric_null_renders_glyph() {
+        // Numeric nulls go through the same cast-to-String path; they must also
+        // render as ∅ rather than a blank cell.
+        let s = Series::new("val".into(), &[Some(1i64), None, Some(3)]);
+        let df = DataFrame::new(vec![s.into()]).unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let null_count = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                buffer
+                    .cell(Position::new(x, y))
+                    .map_or(false, |c| c.symbol() == NULL_GLYPH)
+            })
+            .count();
+        assert_eq!(null_count, 1, "one numeric null should render as one ∅");
     }
 }
