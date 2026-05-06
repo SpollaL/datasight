@@ -1,10 +1,111 @@
-use super::{FileBrowser, BrowserError, Entry};
+use crate::browser::{BrowserError, Entry, FileBrowser, is_supported};
+use std::fs;
 
 pub struct LocalBackend;
 
 impl FileBrowser for LocalBackend {
-    fn list(&self, _prefix: &str) -> Result<Vec<Entry>, BrowserError> {
-        // Stub: will be implemented in Task 3
-        Err(BrowserError::Other("list not implemented yet".to_string()))
+    fn list(&self, prefix: &str) -> Result<Vec<Entry>, BrowserError> {
+        // Canonicalize the prefix to ensure we get absolute paths
+        let abs = fs::canonicalize(prefix).map_err(|e| BrowserError::NotFound(e.to_string()))?;
+        let read_dir =
+            fs::read_dir(&abs).map_err(|e| BrowserError::NotFound(e.to_string()))?;
+
+        let mut dirs: Vec<Entry> = Vec::new();
+        let mut files: Vec<Entry> = Vec::new();
+
+        for result in read_dir.flatten() {
+            let name = result.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            let path = result.path().to_string_lossy().to_string();
+            let is_dir = result.file_type().map(|t| t.is_dir()).unwrap_or(false);
+
+            if is_dir {
+                dirs.push(Entry { name, path, is_dir: true });
+            } else if is_supported(&name) {
+                files.push(Entry { name, path, is_dir: false });
+            }
+        }
+
+        dirs.sort_by(|a, b| a.name.cmp(&b.name));
+        files.sort_by(|a, b| a.name.cmp(&b.name));
+        dirs.extend(files);
+        Ok(dirs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_list_fixtures_only_supported_formats() {
+        let backend = LocalBackend;
+        let entries = backend.list("tests/fixtures").expect("list should succeed");
+        for e in &entries {
+            if !e.is_dir {
+                assert!(is_supported(&e.name), "unexpected file: {}", e.name);
+            }
+        }
+    }
+
+    #[test]
+    fn test_list_fixtures_contains_orders_csv() {
+        let backend = LocalBackend;
+        let entries = backend.list("tests/fixtures").expect("list should succeed");
+        assert!(
+            entries.iter().any(|e| e.name == "orders.csv" && !e.is_dir),
+            "orders.csv not found in listing"
+        );
+    }
+
+    #[test]
+    fn test_list_dirs_come_before_files() {
+        let tmp = std::env::temp_dir().join("datasight_test_list");
+        let sub = tmp.join("subdir");
+        let _ = std::fs::create_dir_all(&sub);
+        let _ = std::fs::write(tmp.join("data.csv"), "a,b\n1,2");
+        let backend = LocalBackend;
+        let entries = backend.list(tmp.to_str().unwrap()).expect("list should succeed");
+        if entries.len() >= 2 {
+            assert!(entries[0].is_dir, "directories should appear before files");
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_list_hidden_files_excluded() {
+        let tmp = std::env::temp_dir().join("datasight_test_hidden");
+        let _ = std::fs::create_dir_all(&tmp);
+        let _ = std::fs::write(tmp.join(".hidden.csv"), "a,b\n1,2");
+        let _ = std::fs::write(tmp.join("visible.csv"), "a,b\n1,2");
+        let backend = LocalBackend;
+        let entries = backend.list(tmp.to_str().unwrap()).expect("list should succeed");
+        assert!(
+            entries.iter().all(|e| !e.name.starts_with('.')),
+            "hidden files should be excluded"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_list_nonexistent_path_errors() {
+        let backend = LocalBackend;
+        let result = backend.list("/nonexistent/path/that/does/not/exist");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_entry_path_is_absolute() {
+        let backend = LocalBackend;
+        let entries = backend.list("tests/fixtures").expect("list should succeed");
+        for e in &entries {
+            assert!(
+                std::path::Path::new(&e.path).is_absolute(),
+                "entry path should be absolute: {}",
+                e.path
+            );
+        }
     }
 }
