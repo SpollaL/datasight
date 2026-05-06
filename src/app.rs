@@ -11,6 +11,7 @@
 //! mode to choose what to render.
 
 use crate::config;
+use crate::theme::Theme;
 use polars::prelude::*;
 use ratatui::widgets::TableState;
 use std::collections::{HashMap, HashSet};
@@ -162,6 +163,7 @@ pub struct App {
     pub unique_values: UniqueValuesState,
     pub columns_view: ColumnsViewState,
     pub viewport: ViewportState,
+    pub theme: &'static Theme,
 }
 
 /// Strips a leading comparison operator from `query`.
@@ -317,7 +319,7 @@ fn build_committed_filter_expr(col_name: &str, query: &str) -> Expr {
 }
 
 impl App {
-    pub fn new(df: DataFrame, file_path: String) -> App {
+    pub fn new(df: DataFrame, file_path: String, theme: &'static Theme) -> App {
         let headers: Vec<String> = df
             .get_column_names()
             .iter()
@@ -346,6 +348,7 @@ impl App {
             unique_values: UniqueValuesState::default(),
             columns_view: ColumnsViewState::default(),
             viewport: ViewportState::default(),
+            theme,
         };
         if !app.df.is_empty() {
             app.state.select(Some(0));

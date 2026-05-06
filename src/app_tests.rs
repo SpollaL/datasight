@@ -12,7 +12,7 @@ mod tests {
             "age" => [30i64, 25, 35],
         }
         .unwrap();
-        App::new(df, "test.csv".to_string())
+        App::new(df, "test.csv".to_string(), crate::theme::default_theme())
     }
 
     fn get_str(app: &App, col: &str, row: usize) -> String {
@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn test_empty_dataframe_new() {
         let df = DataFrame::empty();
-        let app = App::new(df, "empty.csv".to_string());
+        let app = App::new(df, "empty.csv".to_string(), crate::theme::default_theme());
         assert!(app.state.selected().is_none());
         assert!(app.state.selected_column().is_none());
         assert!(app.headers.is_empty());
@@ -118,7 +118,7 @@ mod tests {
             "age"  => [30i64, 25],
         }
         .unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         // Filter to zero rows then search — must not panic
         app.filter.filters = vec![("name".to_string(), "zzznomatch".to_string())];
         app.update_filter();
@@ -133,7 +133,7 @@ mod tests {
             "val" => [1i64, 2, 3],
         }
         .unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         app.filter.filters = vec![("val".to_string(), "zzznomatch".to_string())];
         app.update_filter();
         // Should return default stats without panicking
@@ -248,7 +248,7 @@ mod tests {
             "sal"  => [200i64, 150, 100],
         }
         .unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
 
         // Primary sort: dept ascending
         app.state.select_column(Some(0));
@@ -298,7 +298,7 @@ mod tests {
             "sal"  => [200i64, 150, 100, 300],
         }
         .unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
 
         // Sort by dept asc (primary), sal asc (secondary)
         app.state.select_column(Some(0));
@@ -323,7 +323,7 @@ mod tests {
             "sal"  => [100i64, 200, 150],
         }
         .unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
 
         app.state.select_column(Some(1));
         app.sort_by_column();
@@ -348,7 +348,7 @@ mod columns_view_tests {
             "val" => [1i64, 2, 3],
         }
         .unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         app.build_columns_profile();
         let p = &app.columns_view.profile[0];
         assert_eq!(p.name, "val");
@@ -364,7 +364,7 @@ mod columns_view_tests {
             "name" => ["a", "b", "c"],
         }
         .unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         app.build_columns_profile();
         let p = &app.columns_view.profile[0];
         assert!(p.mean.is_none());
@@ -381,7 +381,7 @@ mod groupby_tests {
             "sal"  => [100i64, 200, 150],
         }
         .unwrap();
-        App::new(df, "test.csv".to_string())
+        App::new(df, "test.csv".to_string(), crate::theme::default_theme())
     }
 
     #[test]
@@ -462,7 +462,7 @@ mod groupby_tests {
             "sal"    => [100i64, 200, 300, 150, 250],
         }
         .unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
 
         // Filter to North only, then groupby dept with sum(sal)
         app.filter.filters = vec![("region".to_string(), "= N".to_string())];
@@ -534,7 +534,7 @@ mod groupby_tests {
             "sal"    => [100i64, 200, 150],
         }
         .unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
 
         app.filter.filters = vec![("region".to_string(), "= N".to_string())];
         app.update_filter();
@@ -569,7 +569,7 @@ mod filter_expr_tests {
             "age"  => [18i64, 25, 30],
         }
         .unwrap();
-        App::new(df, "test.csv".to_string())
+        App::new(df, "test.csv".to_string(), crate::theme::default_theme())
     }
 
     fn apply(app: &mut App, col_idx: usize, query: &str) -> usize {
@@ -636,7 +636,7 @@ mod plot_tests {
             "y" => [10i32, 20i32, 30i32],
         }
         .unwrap();
-        let app = App::new(df, "test.csv".to_string());
+        let app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         let (data, x_is_categorical) = crate::ui::extract_plot_data_pub(&app, 0, 1);
         assert!(!data.is_empty(), "both numeric: data should not be empty");
         assert_eq!(data.len(), 3);
@@ -651,7 +651,7 @@ mod plot_tests {
             "qty"  => [10i32, 20i32, 30i32],
         }
         .unwrap();
-        let app = App::new(df, "test.csv".to_string());
+        let app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         let (data, x_is_categorical) = crate::ui::extract_plot_data_pub(&app, 0, 1);
         assert!(!data.is_empty(), "string x: should use row index");
         assert_eq!(data[0], (0.0, 10.0));
@@ -669,7 +669,7 @@ mod plot_tests {
     #[test]
     fn test_plot_pick_y_toggle_adds_column() {
         let df = df! { "a" => [1i32], "b" => [2i32] }.unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         app.plot.y_cols.clear();
         toggle_y_col(&mut app, 0);
         assert_eq!(app.plot.y_cols, vec![0]);
@@ -678,7 +678,7 @@ mod plot_tests {
     #[test]
     fn test_plot_pick_y_toggle_removes_column() {
         let df = df! { "a" => [1i32], "b" => [2i32] }.unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         app.plot.y_cols = vec![0];
         toggle_y_col(&mut app, 0);
         assert!(app.plot.y_cols.is_empty());
@@ -687,7 +687,7 @@ mod plot_tests {
     #[test]
     fn test_plot_pick_y_toggle_twice_restores_state() {
         let df = df! { "a" => [1i32], "b" => [2i32] }.unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         app.plot.y_cols.clear();
         toggle_y_col(&mut app, 1);
         toggle_y_col(&mut app, 1);
@@ -700,7 +700,7 @@ mod plot_tests {
     #[test]
     fn test_plot_pick_y_toggle_multiple_columns() {
         let df = df! { "a" => [1i32], "b" => [2i32], "c" => [3i32] }.unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         app.plot.y_cols.clear();
         toggle_y_col(&mut app, 0);
         toggle_y_col(&mut app, 2);
@@ -885,7 +885,7 @@ mod chained_filter_tests {
             "sal"  => [100i64, 200, 150],
         }
         .unwrap();
-        App::new(df, "test.csv".to_string())
+        App::new(df, "test.csv".to_string(), crate::theme::default_theme())
     }
 
     #[test]
@@ -955,7 +955,7 @@ mod stats_tests {
             "val" => [10i64, 20, 30],
         }
         .unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         let stats = app.compute_stats(0);
         assert_eq!(stats.count, 3);
         assert_eq!(stats.min, "10");
@@ -967,7 +967,7 @@ mod stats_tests {
     #[test]
     fn test_compute_stats_out_of_bounds_col() {
         let df = df! { "val" => [1i64] }.unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         // col index 99 is out of bounds — should return default without panic
         let stats = app.compute_stats(99);
         assert_eq!(stats.count, 0);
@@ -982,7 +982,7 @@ mod unique_values_tests {
             "status" => ["active", "inactive", "active", "pending"],
         }
         .unwrap();
-        App::new(df, "test.csv".to_string())
+        App::new(df, "test.csv".to_string(), crate::theme::default_theme())
     }
 
     #[test]
@@ -1004,7 +1004,7 @@ mod unique_values_tests {
             &[Some("Alice"), None, Some("Alice"), None, None],
         );
         let df = DataFrame::new(vec![s.into()]).unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         app.state.select_column(Some(0));
         app.build_unique_values();
         // nulls (3 of them) should be first (highest count)
@@ -1024,7 +1024,7 @@ mod unique_values_tests {
             .unwrap()
             .finish()
             .unwrap();
-        let mut app = App::new(df, "orders_nulls.csv".to_string());
+        let mut app = App::new(df, "orders_nulls.csv".to_string(), crate::theme::default_theme());
         // customer_name is col index 3
         app.state.select_column(Some(3));
         app.build_unique_values();
@@ -1086,7 +1086,7 @@ mod cycle_agg_tests {
             "sal"  => [100i64],
         }
         .unwrap();
-        App::new(df, "test.csv".to_string())
+        App::new(df, "test.csv".to_string(), crate::theme::default_theme())
     }
 
     #[test]
@@ -1131,7 +1131,7 @@ mod cycle_agg_tests {
             "city"       => ["NY", "LA"],
         }
         .unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         app.build_columns_profile();
         app
     }

@@ -5,14 +5,15 @@
 //! overlays ([`render_stats_popup`], [`render_help_popup`],
 //! [`render_unique_values_popup`]).
 //!
-//! All colors come from Catppuccin Mocha (`PALETTE.mocha`) via the thin [`c`]
-//! helper. Viewport windowing is handled by [`count_visible_from`], which
-//! computes how many columns fit a given terminal width starting from a column
-//! offset.
+//! Colors come from the active [`Theme`] resolved at startup; each renderer
+//! receives `theme: &Theme` and reads semantic slots (`theme.bg`, `theme.accent`,
+//! `theme.series[N]`, …). Viewport windowing is handled by [`count_visible_from`],
+//! which computes how many columns fit a given terminal width starting from a
+//! column offset.
 
 use crate::app::{AggFunc, App, ColumnProfile, Mode, PlotType, SortDirection};
 use crate::config;
-use catppuccin::PALETTE;
+use crate::theme::Theme;
 use polars::prelude::{DataType, Series};
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -23,30 +24,26 @@ use ratatui::widgets::{
 };
 use ratatui::Frame;
 
-fn c(color: catppuccin::Color) -> Color {
-    Color::Rgb(color.rgb.r, color.rgb.g, color.rgb.b)
-}
-
 const NULL_GLYPH: &str = "∅";
 
 // None → muted ∅ glyph so a real null is distinguishable from an empty-string cell.
-fn format_cell<'a>(value: Option<&str>, m: &catppuccin::FlavorColors) -> Cell<'a> {
+fn format_cell<'a>(value: Option<&str>, theme: &Theme) -> Cell<'a> {
     match value {
-        None => Cell::from(NULL_GLYPH).style(Style::default().fg(c(m.overlay1))),
+        None => Cell::from(NULL_GLYPH).style(Style::default().fg(theme.fg_muted)),
         Some(s) => Cell::from(s.to_string()),
     }
 }
 
 pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
-    let m = &PALETTE.mocha.colors;
+    let theme = app.theme;
 
     if matches!(app.mode, Mode::Plot) {
-        render_plot(frame, app, m);
+        render_plot(frame, app, theme);
         return;
     }
 
     if matches!(app.mode, Mode::ColumnsView) {
-        render_columns_view(frame, app, m);
+        render_columns_view(frame, app, theme);
         return;
     }
 
@@ -102,11 +99,11 @@ pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
     let header_cells = Row::new(vis_cols.iter().map(|&i| {
         Cell::from(app.header_label(i)).style(
             Style::default()
-                .fg(c(m.lavender))
+                .fg(theme.info)
                 .add_modifier(Modifier::BOLD),
         )
     }))
-    .style(Style::default().bg(c(m.surface0)));
+    .style(Style::default().bg(theme.bg_alt));
 
     // Pre-cast only the visible columns to String series.
     let all_columns = visible_view.get_columns();
@@ -124,9 +121,9 @@ pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
         .map(|i| {
             let abs_row = app.viewport.row + i;
             let bg = if abs_row % 2 == 0 {
-                c(m.base)
+                theme.bg
             } else {
-                c(m.mantle)
+                theme.bg_alt
             };
             Row::new(
                 str_columns
@@ -136,11 +133,11 @@ pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
                             .as_ref()
                             .and_then(|series| series.str().ok())
                             .and_then(|ca| ca.get(i));
-                        format_cell(opt, m)
+                        format_cell(opt, theme)
                     })
                     .collect::<Vec<Cell>>(),
             )
-            .style(Style::default().bg(bg).fg(c(m.text)))
+            .style(Style::default().bg(bg).fg(theme.fg))
         })
         .collect();
 
@@ -154,22 +151,22 @@ pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
         .block(
             Block::default()
                 .title(format!(" {} ", app.file_path))
-                .title_style(Style::default().fg(c(m.blue)).add_modifier(Modifier::BOLD))
+                .title_style(Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(c(m.overlay0)))
-                .style(Style::default().bg(c(m.base))),
+                .border_style(Style::default().fg(theme.border_idle))
+                .style(Style::default().bg(theme.bg)),
         )
-        .row_highlight_style(Style::default().bg(c(m.surface0)))
-        .column_highlight_style(Style::default().bg(c(m.surface1)))
+        .row_highlight_style(Style::default().bg(theme.bg_alt))
+        .column_highlight_style(Style::default().bg(theme.bg_sel))
         .cell_highlight_style(
             Style::default()
-                .bg(c(m.blue))
-                .fg(c(m.base))
+                .bg(theme.accent)
+                .fg(theme.bg)
                 .add_modifier(Modifier::BOLD),
         );
 
-    let (bar_text, bar_style) = get_bar(app, m);
+    let (bar_text, bar_style) = get_bar(app, theme);
     let bar = Paragraph::new(bar_text).style(bar_style);
 
     // Render with a temporary state. Column index is relative to the visible window.
@@ -178,18 +175,18 @@ pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
     render_state.select_column(Some(selected_col.saturating_sub(app.viewport.col)));
     frame.render_stateful_widget(table, chunks[0], &mut render_state);
     frame.render_widget(bar, chunks[1]);
-    frame.render_widget(Paragraph::new(shortcut_bar(app, m)), chunks[2]);
+    frame.render_widget(Paragraph::new(shortcut_bar(app, theme)), chunks[2]);
 
     if app.show_stats {
-        render_stats_popup(frame, app, m);
+        render_stats_popup(frame, app, theme);
     }
 
     if app.show_help {
-        render_help_popup(frame, app, m);
+        render_help_popup(frame, app, theme);
     }
 
     if matches!(app.mode, Mode::UniqueValues) {
-        render_unique_values_popup(frame, app, m);
+        render_unique_values_popup(frame, app, theme);
     }
 }
 
@@ -211,7 +208,7 @@ fn count_visible_from(column_widths: &[u16], start: usize, available_w: usize) -
     count.max(1)
 }
 
-fn render_stats_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorColors) {
+fn render_stats_popup(frame: &mut Frame, app: &mut App, theme: &Theme) {
     let col = app
         .state
         .selected_column()
@@ -236,19 +233,19 @@ fn render_stats_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorCo
         .block(
             Block::default()
                 .title(" Column Stats ")
-                .title_style(Style::default().fg(c(m.mauve)).add_modifier(Modifier::BOLD))
+                .title_style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(c(m.mauve))),
+                .border_style(Style::default().fg(theme.info)),
         )
-        .style(Style::default().bg(c(m.surface0)).fg(c(m.text)));
+        .style(Style::default().bg(theme.bg_alt).fg(theme.fg));
     frame.render_widget(popup, area);
 }
 
-fn render_help_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorColors) {
+fn render_help_popup(frame: &mut Frame, app: &mut App, theme: &Theme) {
     let area = centered_rect(55, 80, frame.area());
     frame.render_widget(Clear, area);
-    let text = help_text(m);
+    let text = help_text(theme);
     let total_lines = text.lines.len() as u16;
     let visible_lines = area.height.saturating_sub(2); // subtract top+bottom borders
     app.help_scroll = app
@@ -260,19 +257,19 @@ fn render_help_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorCol
                 .title(" Help — j/k to scroll · ? or Esc to close ")
                 .title_style(
                     Style::default()
-                        .fg(c(m.lavender))
+                        .fg(theme.info)
                         .add_modifier(Modifier::BOLD),
                 )
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(c(m.lavender))),
+                .border_style(Style::default().fg(theme.info)),
         )
-        .style(Style::default().bg(c(m.surface0)).fg(c(m.text)))
+        .style(Style::default().bg(theme.bg_alt).fg(theme.fg))
         .scroll((app.help_scroll, 0));
     frame.render_widget(popup, area);
 }
 
-fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
+fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
     // (primary, secondary) — primary keys are highlighted in blue, secondary in grey.
     // Secondary = always-valid base shortcuts not already shown in primary.
     type Shortcuts = &'static [(&'static str, &'static str)];
@@ -434,16 +431,16 @@ fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
     };
 
     let primary_key = Style::default()
-        .bg(c(m.blue))
-        .fg(c(m.base))
+        .bg(theme.accent)
+        .fg(theme.bg)
         .add_modifier(Modifier::BOLD);
     let secondary_key = Style::default()
-        .bg(c(m.overlay0))
-        .fg(c(m.base))
+        .bg(theme.border_idle)
+        .fg(theme.bg)
         .add_modifier(Modifier::BOLD);
-    let label = Style::default().bg(c(m.mantle)).fg(c(m.subtext0));
-    let gap = Style::default().bg(c(m.mantle));
-    let sep = Style::default().bg(c(m.mantle)).fg(c(m.overlay0));
+    let label = Style::default().bg(theme.bg_alt).fg(theme.fg_dim);
+    let gap = Style::default().bg(theme.bg_alt);
+    let sep = Style::default().bg(theme.bg_alt).fg(theme.border_idle);
 
     let mut spans = Vec::new();
 
@@ -463,10 +460,10 @@ fn shortcut_bar<'a>(app: &App, m: &catppuccin::FlavorColors) -> Line<'a> {
         spans.push(Span::styled("  ", gap));
     }
 
-    Line::from(spans).style(Style::default().bg(c(m.mantle)))
+    Line::from(spans).style(Style::default().bg(theme.bg_alt))
 }
 
-fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
+fn get_bar(app: &App, theme: &Theme) -> (String, Style) {
     match app.mode {
         Mode::PlotPickY => {
             let y_names = if app.plot.y_cols.is_empty() {
@@ -485,8 +482,8 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     y_names
                 ),
                 Style::default()
-                    .bg(c(m.mauve))
-                    .fg(c(m.base))
+                    .bg(theme.info)
+                    .fg(theme.bg)
                     .add_modifier(Modifier::BOLD),
             )
         }
@@ -504,8 +501,8 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     y_names
                 ),
                 Style::default()
-                    .bg(c(m.mauve))
-                    .fg(c(m.base))
+                    .bg(theme.info)
+                    .fg(theme.bg)
                     .add_modifier(Modifier::BOLD),
             )
         }
@@ -530,8 +527,8 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                 }
             },
             Style::default()
-                .bg(c(m.teal))
-                .fg(c(m.base))
+                .bg(theme.info)
+                .fg(theme.bg)
                 .add_modifier(Modifier::BOLD),
         ),
         Mode::ColumnsView => (
@@ -541,15 +538,15 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                 " Column Inspector  |  / search  |  j/k navigate  |  Enter jump to column  |  Esc close ".to_string()
             },
             Style::default()
-                .bg(c(m.green))
-                .fg(c(m.base))
+                .bg(theme.success)
+                .fg(theme.bg)
                 .add_modifier(Modifier::BOLD),
         ),
         Mode::Search => (
             format!(" /{}_ ", app.search.query),
             Style::default()
-                .bg(c(m.yellow))
-                .fg(c(m.base))
+                .bg(theme.warn)
+                .fg(theme.bg)
                 .add_modifier(Modifier::BOLD),
         ),
         Mode::Filter => {
@@ -557,16 +554,16 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                 (
                     format!(" f {}_ — {} ", app.filter.query, err),
                     Style::default()
-                        .bg(c(m.red))
-                        .fg(c(m.base))
+                        .bg(theme.error)
+                        .fg(theme.bg)
                         .add_modifier(Modifier::BOLD),
                 )
             } else {
                 (
                     format!(" f {}_ (>,<,>=,<=,!=,= for numbers) ", app.filter.query),
                     Style::default()
-                        .bg(c(m.sapphire))
-                        .fg(c(m.base))
+                        .bg(theme.info)
+                        .fg(theme.bg)
                         .add_modifier(Modifier::BOLD),
                 )
             }
@@ -606,7 +603,7 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                         agg_summary,
                         app.view.height()
                     ),
-                    c(m.yellow),
+                    theme.warn,
                 )
             } else if !app.groupby.keys.is_empty() {
                 let key_names = app
@@ -618,7 +615,7 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     .join(", ");
                 (
                     format!(" GroupBy: {} | press B to execute ", key_names),
-                    c(m.peach),
+                    theme.warn,
                 )
             } else if !app.search.results.is_empty() {
                 (
@@ -628,7 +625,7 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                         app.search.results.len(),
                         app.search.query
                     ),
-                    c(m.sky),
+                    theme.info,
                 )
             } else if !app.filter.filters.is_empty() {
                 let filter_summary = app
@@ -652,11 +649,11 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                         app.headers.len(),
                         app.file_path
                     ),
-                    c(m.teal),
+                    theme.info,
                 )
             } else if !app.sort.sorts.is_empty() {
                 if let Some(ref err) = app.sort.error {
-                    (format!(" Sort error: {} ", err), c(m.red))
+                    (format!(" Sort error: {} ", err), theme.error)
                 } else {
                     let sort_summary = app
                         .sort
@@ -687,11 +684,11 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                             app.headers.len(),
                             app.file_path
                         ),
-                        c(m.sapphire),
+                        theme.info,
                     )
                 }
             } else if let Some(ref err) = app.sort.error {
-                (format!(" Sort error: {} ", err), c(m.red))
+                (format!(" Sort error: {} ", err), theme.error)
             } else {
                 (
                     format!(
@@ -706,30 +703,30 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                         app.headers.len(),
                         app.file_path
                     ),
-                    c(m.subtext1),
+                    theme.fg_dim,
                 )
             };
-            (text, Style::default().bg(c(m.surface0)).fg(fg))
+            (text, Style::default().bg(theme.bg_alt).fg(fg))
         }
     }
 }
 
-fn help_text(m: &catppuccin::FlavorColors) -> Text<'static> {
+fn help_text(theme: &Theme) -> Text<'static> {
     let section = |title: &'static str| {
         Line::from(vec![
             Span::raw(" "),
             Span::styled(
                 title,
                 Style::default()
-                    .fg(c(m.lavender))
+                    .fg(theme.info)
                     .add_modifier(Modifier::BOLD),
             ),
         ])
     };
     let key = |k: &'static str, desc: &'static str| {
         Line::from(vec![
-            Span::styled(format!("  {:<14}", k), Style::default().fg(c(m.blue))),
-            Span::styled(desc, Style::default().fg(c(m.text))),
+            Span::styled(format!("  {:<14}", k), Style::default().fg(theme.accent)),
+            Span::styled(desc, Style::default().fg(theme.fg)),
         ])
     };
     Text::from(vec![
@@ -786,7 +783,7 @@ fn help_text(m: &catppuccin::FlavorColors) -> Text<'static> {
     ])
 }
 
-fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorColors) {
+fn render_unique_values_popup(frame: &mut Frame, app: &mut App, theme: &Theme) {
     let area = centered_rect(52, 70, frame.area());
     frame.render_widget(Clear, area);
 
@@ -808,11 +805,11 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::
 
     let outer = Block::default()
         .title(title)
-        .title_style(Style::default().fg(c(m.teal)).add_modifier(Modifier::BOLD))
+        .title_style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(c(m.teal)))
-        .style(Style::default().bg(c(m.base)));
+        .border_style(Style::default().fg(theme.info))
+        .style(Style::default().bg(theme.bg));
 
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
@@ -826,17 +823,17 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::
     let (search_text, search_style) = if app.unique_values.searching {
         (
             format!(" Search: {}_ ", app.unique_values.query),
-            Style::default().bg(c(m.surface0)).fg(c(m.text)),
+            Style::default().bg(theme.bg_alt).fg(theme.fg),
         )
     } else if app.unique_values.query.is_empty() {
         (
             " press / to search ".to_string(),
-            Style::default().bg(c(m.surface0)).fg(c(m.subtext0)),
+            Style::default().bg(theme.bg_alt).fg(theme.fg_dim),
         )
     } else {
         (
             format!(" Search: {} (press / to edit) ", app.unique_values.query),
-            Style::default().bg(c(m.surface0)).fg(c(m.subtext0)),
+            Style::default().bg(theme.bg_alt).fg(theme.fg_dim),
         )
     };
     frame.render_widget(Paragraph::new(search_text).style(search_style), zones[0]);
@@ -845,16 +842,16 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::
     let header = Row::new([
         Cell::from("Value").style(
             Style::default()
-                .fg(c(m.lavender))
+                .fg(theme.info)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("Count").style(
             Style::default()
-                .fg(c(m.lavender))
+                .fg(theme.info)
                 .add_modifier(Modifier::BOLD),
         ),
     ])
-    .style(Style::default().bg(c(m.surface0)))
+    .style(Style::default().bg(theme.bg_alt))
     .bottom_margin(1);
 
     let rows: Vec<Row> = app
@@ -863,10 +860,10 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::
         .iter()
         .enumerate()
         .map(|(i, (val, count))| {
-            let bg = if i % 2 == 0 { c(m.base) } else { c(m.mantle) };
+            let bg = if i % 2 == 0 { theme.bg } else { theme.bg_alt };
             Row::new([
-                Cell::from(val.clone()).style(Style::default().fg(c(m.text))),
-                Cell::from(count.to_string()).style(Style::default().fg(c(m.subtext1))),
+                Cell::from(val.clone()).style(Style::default().fg(theme.fg)),
+                Cell::from(count.to_string()).style(Style::default().fg(theme.fg_dim)),
             ])
             .style(Style::default().bg(bg))
         })
@@ -876,15 +873,15 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, m: &catppuccin::
         .header(header)
         .row_highlight_style(
             Style::default()
-                .bg(c(m.teal))
-                .fg(c(m.base))
+                .bg(theme.info)
+                .fg(theme.bg)
                 .add_modifier(Modifier::BOLD),
         );
 
     frame.render_stateful_widget(table, zones[1], &mut app.unique_values.state);
 }
 
-fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorColors) {
+fn render_columns_view(frame: &mut Frame, app: &mut App, theme: &Theme) {
     let full_area = frame.area();
     frame.render_widget(Clear, full_area);
 
@@ -900,72 +897,72 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorC
     let (search_text, search_style) = if app.columns_view.searching {
         (
             format!(" Search: {}_ ", app.columns_view.query),
-            Style::default().bg(c(m.surface0)).fg(c(m.text)),
+            Style::default().bg(theme.bg_alt).fg(theme.fg),
         )
     } else if app.columns_view.query.is_empty() {
         (
             " press / to search ".to_string(),
-            Style::default().bg(c(m.surface0)).fg(c(m.subtext0)),
+            Style::default().bg(theme.bg_alt).fg(theme.fg_dim),
         )
     } else {
         (
             format!(" Search: {} (press / to edit) ", app.columns_view.query),
-            Style::default().bg(c(m.surface0)).fg(c(m.subtext0)),
+            Style::default().bg(theme.bg_alt).fg(theme.fg_dim),
         )
     };
     frame.render_widget(Paragraph::new(search_text).style(search_style), chunks[0]);
 
-    let (bar_text, bar_style) = get_bar(app, m);
+    let (bar_text, bar_style) = get_bar(app, theme);
     frame.render_widget(Paragraph::new(bar_text).style(bar_style), chunks[2]);
 
     let header = Row::new([
         Cell::from("Column").style(
             Style::default()
-                .fg(c(m.lavender))
+                .fg(theme.info)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("Type").style(
             Style::default()
-                .fg(c(m.lavender))
+                .fg(theme.info)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("Count").style(
             Style::default()
-                .fg(c(m.lavender))
+                .fg(theme.info)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("Nulls").style(
             Style::default()
-                .fg(c(m.lavender))
+                .fg(theme.info)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("Unique").style(
             Style::default()
-                .fg(c(m.lavender))
+                .fg(theme.info)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("Min").style(
             Style::default()
-                .fg(c(m.lavender))
+                .fg(theme.info)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("Max").style(
             Style::default()
-                .fg(c(m.lavender))
+                .fg(theme.info)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("Mean").style(
             Style::default()
-                .fg(c(m.lavender))
+                .fg(theme.info)
                 .add_modifier(Modifier::BOLD),
         ),
         Cell::from("Median").style(
             Style::default()
-                .fg(c(m.lavender))
+                .fg(theme.info)
                 .add_modifier(Modifier::BOLD),
         ),
     ])
-    .style(Style::default().bg(c(m.surface0)))
+    .style(Style::default().bg(theme.bg_alt))
     .bottom_margin(1);
 
     let rows: Vec<Row> = app
@@ -977,7 +974,7 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorC
             app.columns_view
                 .profile
                 .get(idx)
-                .map(|p| profile_row(p, i, m))
+                .map(|p| profile_row(p, i, theme))
         })
         .collect();
 
@@ -1005,56 +1002,47 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorC
         .block(
             Block::default()
                 .title(title)
-                .title_style(Style::default().fg(c(m.green)).add_modifier(Modifier::BOLD))
+                .title_style(Style::default().fg(theme.success).add_modifier(Modifier::BOLD))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(c(m.overlay0)))
-                .style(Style::default().bg(c(m.base))),
+                .border_style(Style::default().fg(theme.border_idle))
+                .style(Style::default().bg(theme.bg)),
         )
         .row_highlight_style(
             Style::default()
-                .bg(c(m.green))
-                .fg(c(m.base))
+                .bg(theme.success)
+                .fg(theme.bg)
                 .add_modifier(Modifier::BOLD),
         );
 
     frame.render_stateful_widget(table, chunks[1], &mut app.columns_view.state);
 }
 
-fn profile_row<'a>(p: &'a ColumnProfile, idx: usize, m: &catppuccin::FlavorColors) -> Row<'a> {
-    let bg = if idx % 2 == 0 { c(m.base) } else { c(m.mantle) };
+fn profile_row<'a>(p: &'a ColumnProfile, idx: usize, theme: &Theme) -> Row<'a> {
+    let bg = if idx % 2 == 0 { theme.bg } else { theme.bg_alt };
     let null_style = if p.null_count > 0 {
-        Style::default().fg(c(m.red))
+        Style::default().fg(theme.error)
     } else {
-        Style::default().fg(c(m.text))
+        Style::default().fg(theme.fg)
     };
     Row::new([
-        Cell::from(p.name.clone()).style(Style::default().fg(c(m.text))),
-        Cell::from(p.dtype.clone()).style(Style::default().fg(c(m.subtext1))),
-        Cell::from(p.count.to_string()).style(Style::default().fg(c(m.text))),
+        Cell::from(p.name.clone()).style(Style::default().fg(theme.fg)),
+        Cell::from(p.dtype.clone()).style(Style::default().fg(theme.fg_dim)),
+        Cell::from(p.count.to_string()).style(Style::default().fg(theme.fg)),
         Cell::from(p.null_count.to_string()).style(null_style),
-        Cell::from(p.unique.to_string()).style(Style::default().fg(c(m.text))),
-        Cell::from(p.min.clone()).style(Style::default().fg(c(m.subtext1))),
-        Cell::from(p.max.clone()).style(Style::default().fg(c(m.subtext1))),
+        Cell::from(p.unique.to_string()).style(Style::default().fg(theme.fg)),
+        Cell::from(p.min.clone()).style(Style::default().fg(theme.fg_dim)),
+        Cell::from(p.max.clone()).style(Style::default().fg(theme.fg_dim)),
         Cell::from(p.mean.map_or("—".to_string(), |v| format!("{:.2}", v)))
-            .style(Style::default().fg(c(m.blue))),
+            .style(Style::default().fg(theme.accent)),
         Cell::from(p.median.map_or("—".to_string(), |v| format!("{:.2}", v)))
-            .style(Style::default().fg(c(m.blue))),
+            .style(Style::default().fg(theme.accent)),
     ])
     .style(Style::default().bg(bg))
 }
 
-fn series_color(idx: usize, m: &catppuccin::FlavorColors) -> Color {
-    match idx % 8 {
-        0 => c(m.blue),
-        1 => c(m.green),
-        2 => c(m.red),
-        3 => c(m.yellow),
-        4 => c(m.mauve),
-        5 => c(m.peach),
-        6 => c(m.teal),
-        _ => c(m.lavender),
-    }
+fn series_color(idx: usize, theme: &Theme) -> Color {
+    theme.series[idx % theme.series.len()]
 }
 
 fn downsample(data: Vec<(f64, f64)>, max_points: usize) -> Vec<(f64, f64)> {
@@ -1112,7 +1100,7 @@ fn compute_histogram(app: &App, y_idx: usize) -> Result<Vec<(f64, f64)>, String>
 fn render_histogram(
     frame: &mut Frame,
     app: &App,
-    m: &catppuccin::FlavorColors,
+    theme: &Theme,
     y_idx: usize,
     full_area: Rect,
 ) {
@@ -1126,7 +1114,7 @@ fn render_histogram(
     let bar_text =
         " Histogram chart  |  t cycle line/bar/histogram  |  Esc / p to close ".to_string();
     frame.render_widget(
-        Paragraph::new(bar_text).style(Style::default().bg(c(m.surface0)).fg(c(m.subtext1))),
+        Paragraph::new(bar_text).style(Style::default().bg(theme.bg_alt).fg(theme.fg_dim)),
         bar_area,
     );
 
@@ -1137,12 +1125,12 @@ fn render_histogram(
                 .block(
                     Block::default()
                         .title(" Plot Error ")
-                        .title_style(Style::default().fg(c(m.red)).add_modifier(Modifier::BOLD))
+                        .title_style(Style::default().fg(theme.error).add_modifier(Modifier::BOLD))
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(c(m.red))),
+                        .border_style(Style::default().fg(theme.error)),
                 )
-                .style(Style::default().bg(c(m.base)).fg(c(m.text)));
+                .style(Style::default().bg(theme.bg).fg(theme.fg));
             frame.render_widget(paragraph, chart_area);
             return;
         }
@@ -1165,30 +1153,30 @@ fn render_histogram(
         .name(app.headers[y_idx].as_str())
         .marker(symbols::Marker::Braille)
         .graph_type(GraphType::Bar)
-        .style(Style::default().fg(c(m.mauve)))
+        .style(Style::default().fg(theme.info))
         .data(&data);
 
     let chart = Chart::new(vec![dataset])
         .block(
             Block::default()
                 .title(format!(" Distribution of {} ", app.headers[y_idx]))
-                .title_style(Style::default().fg(c(m.mauve)).add_modifier(Modifier::BOLD))
+                .title_style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(c(m.overlay0)))
-                .style(Style::default().bg(c(m.base))),
+                .border_style(Style::default().fg(theme.border_idle))
+                .style(Style::default().bg(theme.bg)),
         )
         .x_axis(
             Axis::default()
                 .title(app.headers[y_idx].as_str())
-                .style(Style::default().fg(c(m.subtext1)))
+                .style(Style::default().fg(theme.fg_dim))
                 .labels(x_labels)
                 .bounds([x_min, x_max]),
         )
         .y_axis(
             Axis::default()
                 .title("Count")
-                .style(Style::default().fg(c(m.subtext1)))
+                .style(Style::default().fg(theme.fg_dim))
                 .labels(numeric_axis_labels(
                     0.0,
                     y_max + y_pad,
@@ -1200,7 +1188,7 @@ fn render_histogram(
     frame.render_widget(chart, chart_area);
 }
 
-fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
+fn render_plot(frame: &mut Frame, app: &App, theme: &Theme) {
     let full_area = frame.area();
     frame.render_widget(Clear, full_area);
 
@@ -1210,7 +1198,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
 
     // Histogram: single-column only; use first Y col.
     if matches!(app.plot.plot_type, PlotType::Histogram) {
-        render_histogram(frame, app, m, app.plot.y_cols[0], full_area);
+        render_histogram(frame, app, theme, app.plot.y_cols[0], full_area);
         return;
     }
 
@@ -1278,7 +1266,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
             app.plot_type_label(),
             cycle_hint
         ))
-        .style(Style::default().bg(c(m.surface0)).fg(c(m.subtext1))),
+        .style(Style::default().bg(theme.bg_alt).fg(theme.fg_dim)),
         bar_area,
     );
 
@@ -1287,12 +1275,12 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
             .block(
                 Block::default()
                     .title(" Plot Error ")
-                    .title_style(Style::default().fg(c(m.red)).add_modifier(Modifier::BOLD))
+                    .title_style(Style::default().fg(theme.error).add_modifier(Modifier::BOLD))
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(c(m.red))),
+                    .border_style(Style::default().fg(theme.error)),
             )
-            .style(Style::default().bg(c(m.base)).fg(c(m.text)));
+            .style(Style::default().bg(theme.bg).fg(theme.fg));
         frame.render_widget(msg, chart_area);
         return;
     }
@@ -1328,7 +1316,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
             Dataset::default()
                 .marker(symbols::Marker::Braille)
                 .graph_type(graph_type)
-                .style(Style::default().fg(series_color(*series_idx, m)))
+                .style(Style::default().fg(series_color(*series_idx, theme)))
                 .data(data)
         })
         .collect();
@@ -1356,18 +1344,18 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
                 .title(format!(" {} vs {} ", title_y, x_header))
                 .title_style(
                     Style::default()
-                        .fg(series_color(0, m))
+                        .fg(series_color(0, theme))
                         .add_modifier(Modifier::BOLD),
                 )
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(c(m.overlay0)))
-                .style(Style::default().bg(c(m.base))),
+                .border_style(Style::default().fg(theme.border_idle))
+                .style(Style::default().bg(theme.bg)),
         )
         .x_axis(
             Axis::default()
                 .title(x_header)
-                .style(Style::default().fg(c(m.subtext1)))
+                .style(Style::default().fg(theme.fg_dim))
                 .bounds([x_min, x_max]),
         )
         .y_axis(
@@ -1377,7 +1365,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
                 } else {
                     "Value"
                 })
-                .style(Style::default().fg(c(m.subtext1)))
+                .style(Style::default().fg(theme.fg_dim))
                 .labels(y_labels)
                 .bounds(y_bounds),
         );
@@ -1386,7 +1374,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
 
     // Legend for multi-series plots.
     if app.plot.y_cols.len() > 1 {
-        render_plot_legend(frame, app, m, chart_area);
+        render_plot_legend(frame, app, theme, chart_area);
     }
 
     if !x_labels.is_empty() && label_area.height > 0 {
@@ -1397,7 +1385,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
             chart_area,
             label_area,
             y_label_width,
-            c(m.subtext1),
+            theme.fg_dim,
         );
     }
 }
@@ -1405,7 +1393,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
 fn render_plot_legend(
     frame: &mut Frame,
     app: &App,
-    m: &catppuccin::FlavorColors,
+    theme: &Theme,
     chart_area: Rect,
 ) {
     let legend_inner_w = app
@@ -1443,8 +1431,8 @@ fn render_plot_legend(
         .enumerate()
         .map(|(i, &y_idx)| {
             Line::from(vec![
-                Span::styled("● ", Style::default().fg(series_color(i, m))),
-                Span::styled(app.headers[y_idx].as_str(), Style::default().fg(c(m.text))),
+                Span::styled("● ", Style::default().fg(series_color(i, theme))),
+                Span::styled(app.headers[y_idx].as_str(), Style::default().fg(theme.fg)),
             ])
         })
         .collect();
@@ -1453,8 +1441,8 @@ fn render_plot_legend(
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(c(m.overlay0)))
-            .style(Style::default().bg(c(m.base))),
+            .border_style(Style::default().fg(theme.border_idle))
+            .style(Style::default().bg(theme.bg)),
     );
     frame.render_widget(legend, legend_area);
 }
@@ -1716,7 +1704,7 @@ mod histogram_tests {
             "val" => [1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
         }
         .unwrap();
-        App::new(df, "test.csv".to_string())
+        App::new(df, "test.csv".to_string(), crate::theme::default_theme())
     }
 
     #[test]
@@ -1738,7 +1726,7 @@ mod histogram_tests {
             "name" => ["alice", "bob", "charlie"],
         }
         .unwrap();
-        let app = App::new(df, "test.csv".to_string());
+        let app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         let result = compute_histogram_pub(&app, 0);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("numeric"));
@@ -1751,7 +1739,7 @@ mod histogram_tests {
             "val" => [5.0f64, 5.0, 5.0],
         }
         .unwrap();
-        let app = App::new(df, "test.csv".to_string());
+        let app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         let result = compute_histogram_pub(&app, 0);
         assert!(result.is_ok());
         let data = result.unwrap();
@@ -1773,7 +1761,7 @@ mod histogram_tests {
             .cast(&DataType::Decimal(Some(10), Some(2)))
             .unwrap();
         let df = DataFrame::new(vec![s.into()]).unwrap();
-        let app = App::new(df, "test.parquet".to_string());
+        let app = App::new(df, "test.parquet".to_string(), crate::theme::default_theme());
         let result = compute_histogram_pub(&app, 0);
         assert!(
             result.is_ok(),
@@ -1843,7 +1831,7 @@ mod indexed_plot_tests {
             "val" => [10.0f64, 20.0, 30.0],
         }
         .unwrap();
-        let app = App::new(df, "test.csv".to_string());
+        let app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         let data = extract_plot_data_indexed(&app, 0);
         assert_eq!(data, vec![(0.0, 10.0), (1.0, 20.0), (2.0, 30.0)]);
     }
@@ -1854,7 +1842,7 @@ mod indexed_plot_tests {
         // position so gaps are visually preserved.
         let s = Series::new("val".into(), &[Some(10.0f64), None, Some(30.0)]);
         let df = DataFrame::new(vec![s.into()]).unwrap();
-        let app = App::new(df, "test.csv".to_string());
+        let app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         let data = extract_plot_data_indexed(&app, 0);
         assert_eq!(data, vec![(0.0, 10.0), (2.0, 30.0)]);
     }
@@ -1865,7 +1853,7 @@ mod indexed_plot_tests {
             "name" => ["alice", "bob"],
         }
         .unwrap();
-        let app = App::new(df, "test.csv".to_string());
+        let app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         assert!(extract_plot_data_indexed(&app, 0).is_empty());
     }
 }
@@ -1936,7 +1924,7 @@ mod null_render_tests {
         // One column, three rows: a value, an empty string, a real null.
         let s = Series::new("col".into(), &[Some("alice"), Some(""), None]);
         let df = DataFrame::new(vec![s.into()]).unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
 
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -1945,7 +1933,7 @@ mod null_render_tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let expected_fg = c(PALETTE.mocha.colors.overlay1);
+        let expected_fg = crate::theme::default_theme().fg_muted;
 
         let area = buffer.area;
         let mut null_cells = 0;
@@ -1970,7 +1958,7 @@ mod null_render_tests {
         // Empty strings must stay blank — only real nulls get the glyph.
         let s = Series::new("col".into(), &[Some("alice"), Some(""), Some("bob")]);
         let df = DataFrame::new(vec![s.into()]).unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
 
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -1998,7 +1986,7 @@ mod null_render_tests {
         // render as ∅ rather than a blank cell.
         let s = Series::new("val".into(), &[Some(1i64), None, Some(3)]);
         let df = DataFrame::new(vec![s.into()]).unwrap();
-        let mut app = App::new(df, "test.csv".to_string());
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
 
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();

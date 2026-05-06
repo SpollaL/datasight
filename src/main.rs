@@ -269,7 +269,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::io::IsTerminal;
     let cli = Cli::parse();
 
-    let _theme: &'static theme::Theme = {
+    let theme: &'static theme::Theme = {
         let cli_theme = cli.theme.as_deref();
         let env_theme = std::env::var("DATASIGHT_THEME").ok();
         let state_theme = theme::state_path().and_then(|p| theme::read_state_theme_at(&p));
@@ -327,7 +327,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let app = App::new(df, title);
+    let app = App::new(df, title, theme);
     ratatui::run(|terminal| run_app(terminal, app))
 }
 
