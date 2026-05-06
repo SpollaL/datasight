@@ -510,6 +510,57 @@ assert_contains "L/rapid-keys" "col"
 
 quit
 
+# ── Suite X: browse subcommand ────────────────────────────────────────────────
+echo ""
+echo "=== Suite X: browse subcommand ==="
+
+# X1: browse opens with fixture directory — browser pane visible
+start_app "browse tests/fixtures/"
+assert_contains "X1/browser-pane-visible" "orders.csv"
+quit
+
+# X2: open a file from the browser — viewer pane appears
+start_app "browse tests/fixtures/"
+# Press Enter to open whichever file is selected at cursor
+enter 0.4
+assert_contains "X2/viewer-loads-file" "order_id"
+send "q" 0.20
+
+# X3: ctrl-e toggles the browser pane off
+# Use "wide.csv" as the sentinel — it lives in the directory listing but is NOT
+# the file that opens (orders.csv is first alphabetically), so it only appears
+# when the browser pane is actually visible.
+start_app "browse tests/fixtures/"
+enter 0.4  # open a file first
+tmux send-keys -t "$APP_PANE" C-e; sleep 0.30
+assert_not_contains "X3/browser-hidden" "wide.csv"
+send "q" 0.20
+
+# X4: ctrl-e toggles back on
+# Use "wide.csv" — present only in the browser listing, not in viewer title.
+start_app "browse tests/fixtures/"
+enter 0.4
+tmux send-keys -t "$APP_PANE" C-e; sleep 0.30
+tmux send-keys -t "$APP_PANE" C-e; sleep 0.30
+assert_contains "X4/browser-shown-again" "wide.csv"
+send "q" 0.20
+
+# X5: ctrl-h brings focus back to browser (browser visible)
+# "wide.csv" is only rendered when the browser pane is on screen.
+start_app "browse tests/fixtures/"
+enter 0.4  # open file, focus on viewer
+tmux send-keys -t "$APP_PANE" C-h; sleep 0.20
+send "j" 0.15
+assert_contains "X5/browser-focused" "wide.csv"
+send "q" 0.20
+
+# X6: browse with no path arg opens current dir
+pushd tests/fixtures > /dev/null
+start_app "browse"
+assert_contains "X6/browse-cwd-default" "orders.csv"
+send "q" 0.20
+popd > /dev/null
+
 # ── Summary ────────────────────────────────────────────────────────────────────
 echo ""
 echo "════════════════════════════════════════"
