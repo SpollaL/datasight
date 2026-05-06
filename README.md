@@ -25,6 +25,7 @@
 - Custom delimiter support via `-d` flag — works with pipe-separated, semicolon-separated, and any single-character delimiter
 - Pipe-friendly — reads from stdin with automatic format detection (CSV, JSON, NDJSON)
 - Viewport-windowed rendering — stays fast on large files
+- File browser (`browse`) — navigate local directories and Azure Blob / S3 buckets, open files directly into the viewer
 
 ## Install
 
@@ -77,6 +78,37 @@ kubectl get pods -o jsonlines | datasight
 # From a database
 psql -c "\copy (SELECT * FROM orders) TO STDOUT CSV HEADER" | datasight
 ```
+
+## File Browser
+
+Browse local directories or cloud storage and open files directly into the viewer:
+
+```bash
+datasight browse .                          # current directory
+datasight browse /data/exports              # local path
+datasight browse az://my-container         # Azure Blob Storage
+datasight browse s3://my-bucket            # AWS S3
+```
+
+Cloud backends require building with the relevant feature:
+
+```bash
+cargo install --path . --features azure     # Azure support
+cargo install --path . --features aws       # S3 support
+```
+
+Azure reads `AZURE_STORAGE_CONNECTION_STRING` or individual `AZURE_STORAGE_ACCOUNT_NAME` / `AZURE_STORAGE_ACCOUNT_KEY` env vars.
+
+### Browse keybindings
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Navigate list |
+| `. / Enter` | Open file or enter directory |
+| `Esc` | Go up to parent |
+| `Tab` | Switch focus browser ↔ viewer |
+| `ctrl-e` | Toggle browser sidebar |
+| `q` | Quit (when no file is open) |
 
 ## Keybindings
 
