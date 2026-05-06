@@ -52,7 +52,9 @@ Source files under `src/`:
 - **`app_tests.rs`** — Unit tests for `app.rs`, loaded via `#[path]` so they share `app`'s private scope (`FilterQuery`, `parse_operator`, etc.) without requiring visibility changes.
 - **`config.rs`** — Application-wide numeric constants (`DEFAULT_COLUMN_WIDTH`, `PAGE_SCROLL_AMOUNT`, etc.).
 - **`events.rs`** — The main event loop (`run_app`). Reads crossterm key events and dispatches to `App` methods or small helper functions based on `app.mode`.
-- **`ui.rs`** — All ratatui rendering. Uses Catppuccin Mocha (`PALETTE.mocha`) for colors via a thin `c()` helper. `count_visible_from()` handles horizontal viewport windowing; `ViewportState` tracks `row`/`col` offsets so large files stay fast.
+- **`ui.rs`** — All ratatui rendering. Resolves colors from the active `&'static Theme` (`app.theme`) — no hardcoded palette references. `count_visible_from()` handles horizontal viewport windowing; `ViewportState` tracks `row`/`col` offsets so large files stay fast.
+- **`theme.rs`** — Base16 theme system. Owns 9 built-in `Base16Scheme` constants, the semantic `Theme` struct (slot-based: `bg`, `bg_alt`, `accent`, `error`, `series[6]`, etc.), state file I/O at `~/.config/datasight/state.toml`, and the `resolve_theme(cli, env, state)` precedence function (CLI > env > state file > `mocha`).
+- **`theme_picker.rs`** — `ThemePicker` state (cursor + original theme name) and `render_picker()` popup helper, used by both `App` (plain mode) and `BrowserApp` (browse mode).
 
 ### State sub-structs
 
@@ -69,7 +71,7 @@ Source files under `src/`:
 
 ### Mode state machine
 
-`Mode` variants (defined in `app.rs`): `Normal`, `Search`, `Filter`, `PlotPickY`, `PlotPickX`, `Plot`, `ColumnsView`, `UniqueValues`. The event loop in `events.rs` matches on `app.mode` first; `ui.rs` branches on mode to render the appropriate full-screen view or popup overlay.
+`Mode` variants (defined in `app.rs`): `Normal`, `Search`, `Filter`, `PlotPickY`, `PlotPickX`, `Plot`, `ColumnsView`, `UniqueValues`, `ThemePicker`. The event loop in `events.rs` matches on `app.mode` first; `ui.rs` branches on mode to render the appropriate full-screen view or popup overlay. In browse mode (`BrowserApp`), the picker is gated by an `Option<ThemePicker>` field instead of a mode variant, and `BrowserApp` propagates its `&'static Theme` to the viewer's `App` on file load and on every picker key event so live preview stays in sync across both panes.
 
 ### Data flow
 

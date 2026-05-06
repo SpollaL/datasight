@@ -562,6 +562,66 @@ assert_contains "X6/browse-cwd-default" "orders.csv"
 send "q" 0.20
 tmux send-keys -t "$APP_PANE" "cd $REPO_ROOT" Enter; sleep 0.2
 
+# ── Suite Y: Theme picker ─────────────────────────────────────────────────────
+echo ""
+echo "=== Suite Y: Theme picker ==="
+
+# Start clean — remove any persisted state from a prior run.
+STATE_FILE="${HOME}/.config/datasight/state.toml"
+rm -f "$STATE_FILE"
+
+# Reset cwd to repo root in case earlier suites left it elsewhere.
+tmux send-keys -t "$APP_PANE" C-c; sleep 0.10
+tmux send-keys -t "$APP_PANE" C-u; sleep 0.05
+tmux send-keys -t "$APP_PANE" "cd $REPO_ROOT" Enter; sleep 0.20
+
+# Y1: T opens the picker; the popup lists Base16 themes
+start_app "tests/fixtures/orders.csv"
+send "T" 0.60
+assert_contains "Y1/picker-title" "Theme"
+assert_contains "Y1/picker-list"  "nord"
+
+# Y2: Esc cancels the picker — popup gone, no state file written
+esc
+assert_not_contains "Y2/picker-closed" "nord"
+if [ ! -f "$STATE_FILE" ]; then
+  echo "  PASS [Y2/no-state-after-cancel]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [Y2/no-state-after-cancel] — state.toml written despite Esc"
+  FAIL=$((FAIL + 1))
+  FAILURES+=("[Y2/no-state-after-cancel] state.toml exists after cancel")
+fi
+quit
+
+# Y3: Re-open picker, navigate down once, Enter persists the choice
+start_app "tests/fixtures/orders.csv"
+send "T" 0.60
+send "j" 0.15
+enter 0.30
+assert_contains "Y3/picker-closed" "order_id"
+quit
+
+# Y4: State file exists and contains a theme name
+if [ -f "$STATE_FILE" ] && grep -q '^theme *=' "$STATE_FILE"; then
+  echo "  PASS [Y4/state-persisted]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [Y4/state-persisted] — expected theme= in $STATE_FILE"
+  FAIL=$((FAIL + 1))
+  FAILURES+=("[Y4/state-persisted] state file missing or malformed")
+fi
+
+# Y5: T also opens the picker in browse mode
+start_app "browse tests/fixtures/"
+send "T" 0.60
+assert_contains "Y5/browse-picker-open" "Theme"
+esc
+send "q" 0.20
+
+# Reset theme state so the next QA run (and the dev's normal use) starts fresh.
+rm -f "$STATE_FILE"
+
 # ── Summary ────────────────────────────────────────────────────────────────────
 echo ""
 echo "════════════════════════════════════════"

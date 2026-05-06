@@ -1,6 +1,6 @@
 # datasight — a fast terminal viewer for CSV, Parquet, and JSON
 
-**A vim-keybinded TUI for exploring tabular data from the command line.** Browse, filter, sort, group, and plot CSV, TSV, Parquet, JSON, and NDJSON files directly in your terminal — no spreadsheet, no notebook, no web UI required. Built in Rust on [ratatui](https://ratatui.rs) and themed with [Catppuccin Mocha](https://github.com/catppuccin/catppuccin).
+**A vim-keybinded TUI for exploring tabular data from the command line.** Browse, filter, sort, group, and plot CSV, TSV, Parquet, JSON, and NDJSON files directly in your terminal — no spreadsheet, no notebook, no web UI required. Built in Rust on [ratatui](https://ratatui.rs), with 9 built-in [Base16](https://github.com/chriskempson/base16) color themes.
 
 [![CI](https://github.com/SpollaL/datasight/actions/workflows/ci.yml/badge.svg)](https://github.com/SpollaL/datasight/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -20,7 +20,7 @@
 - Column stats popup (`e`)
 - Automatic date detection for ISO (`YYYY-MM-DD`) and common non-ISO formats (`MM/DD/YYYY`, `DD-Mon-YYYY`), with an ambiguity guard for slash-dates
 - In-app help popup (`?`)
-- Catppuccin Mocha color theme with zebra-striped rows and mode-aware status bar
+- 9 built-in Base16 themes — `--theme nord`, `gruvbox-dark`, `dracula`, etc., switchable live with `T` and persisted across runs
 - Supports CSV, TSV, Parquet, JSON (`[{...}]`), and NDJSON/JSON Lines (`.ndjson`, `.jsonl`) files
 - Custom delimiter support via `-d` flag — works with pipe-separated, semicolon-separated, and any single-character delimiter
 - Pipe-friendly — reads from stdin with automatic format detection (CSV, JSON, NDJSON)
@@ -108,7 +108,36 @@ Azure reads `AZURE_STORAGE_CONNECTION_STRING` or individual `AZURE_STORAGE_ACCOU
 | `Esc` | Go up to parent |
 | `Tab` | Switch focus browser ↔ viewer |
 | `ctrl-e` | Toggle browser sidebar |
+| `T` | Open theme picker |
 | `q` | Quit (when no file is open) |
+## Themes
+
+datasight ships with 9 Base16 color themes:
+
+| Name | Display |
+|---|---|
+| `mocha` *(default)* | Catppuccin Mocha |
+| `latte` | Catppuccin Latte |
+| `frappe` | Catppuccin Frappé |
+| `macchiato` | Catppuccin Macchiato |
+| `gruvbox-dark` | Gruvbox Dark |
+| `nord` | Nord |
+| `dracula` | Dracula |
+| `solarized-dark` | Solarized Dark |
+| `tokyo-night` | Tokyo Night |
+
+Pick one at startup:
+
+```
+datasight --theme nord file.csv
+DATASIGHT_THEME=dracula datasight file.csv
+```
+
+Or switch live: press **`T`** to open the theme picker, `j`/`k` to browse with
+live preview, `Enter` to confirm (saves to `~/.config/datasight/state.toml`),
+`Esc` to revert.
+
+Precedence: `--theme` > `DATASIGHT_THEME` > saved state file > `mocha` (default).
 
 ## Keybindings
 
@@ -183,6 +212,7 @@ Active sorts are shown in the header with `①▲` / `②▼` glyphs and summari
 | `h` / `←` / `l` / `→` | Pick-Y / Pick-X | Move between columns |
 | `Space` | Pick-Y | Toggle the current column as a Y series (select one or many) |
 | `Enter` | Pick-Y | Confirm Y selection and advance to pick-X |
+| `i` | Pick-Y | Use row index as X and render the chart immediately (skips pick-X) |
 | `Enter` | Pick-X | Confirm X column and render the chart |
 | `Esc` | Pick-Y / Pick-X | Cancel (pick-X goes back to pick-Y; pick-Y returns to normal) |
 | `t` | Plot | Cycle chart type (line → bar → histogram for single-Y; line ↔ bar for multi-Y) |
@@ -219,6 +249,7 @@ For histogram, the Y column is binned automatically — no X column selection ne
 | `=` | Autofit all columns |
 | `e` | Toggle column stats popup |
 | `?` | Toggle help popup |
+| `T` | Open theme picker |
 | `q` | Quit |
 
 ## Troubleshooting

@@ -1,18 +1,14 @@
 use crate::browser::app::{BrowserApp, Focus};
+use crate::theme::Theme;
 use crate::ui::ui;
-use catppuccin::PALETTE;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
-fn c(color: catppuccin::Color) -> Color {
-    Color::Rgb(color.rgb.r, color.rgb.g, color.rgb.b)
-}
-
 pub fn browser_ui(frame: &mut Frame, app: &mut BrowserApp) {
-    let m = &PALETTE.mocha.colors;
+    let theme: &Theme = app.theme;
 
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(frame.area());
@@ -21,26 +17,25 @@ pub fn browser_ui(frame: &mut Frame, app: &mut BrowserApp) {
         let [browser_area, viewer_area] =
             Layout::horizontal([Constraint::Percentage(30), Constraint::Percentage(70)])
                 .areas(content_area);
-        render_browser_pane(frame, app, browser_area, m);
-        render_viewer_pane(frame, app, viewer_area, m);
+        render_browser_pane(frame, app, browser_area, theme);
+        render_viewer_pane(frame, app, viewer_area, theme);
     } else {
-        render_viewer_pane(frame, app, content_area, m);
+        render_viewer_pane(frame, app, content_area, theme);
     }
 
-    frame.render_widget(Paragraph::new(browser_shortcut_bar(app, m)), bar_area);
+    frame.render_widget(Paragraph::new(browser_shortcut_bar(app, theme)), bar_area);
+
+    if let Some(ref picker) = app.picker {
+        crate::theme_picker::render_picker(frame, frame.area(), picker, app.theme);
+    }
 }
 
-fn render_browser_pane(
-    frame: &mut Frame,
-    app: &BrowserApp,
-    area: Rect,
-    m: &catppuccin::FlavorColors,
-) {
+fn render_browser_pane(frame: &mut Frame, app: &BrowserApp, area: Rect, theme: &Theme) {
     let is_focused = app.focus == Focus::Browser;
     let border_style = if is_focused {
-        Style::default().fg(c(m.blue))
+        Style::default().fg(theme.accent)
     } else {
-        Style::default().fg(c(m.overlay0))
+        Style::default().fg(theme.border_idle)
     };
 
     let title = truncate_path_left(&app.cwd, area.width.saturating_sub(4) as usize);
@@ -48,7 +43,7 @@ fn render_browser_pane(
         .title(Line::from(title).alignment(Alignment::Left))
         .borders(Borders::ALL)
         .border_style(border_style)
-        .style(Style::default().bg(c(m.mantle)));
+        .style(Style::default().bg(theme.bg_alt));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -62,7 +57,7 @@ fn render_browser_pane(
     };
 
     if let (Some(msg), Some(sa)) = (&app.status, status_area) {
-        let status = Paragraph::new(msg.as_str()).style(Style::default().fg(c(m.red)));
+        let status = Paragraph::new(msg.as_str()).style(Style::default().fg(theme.error));
         frame.render_widget(status, sa);
     }
 
@@ -71,9 +66,9 @@ fn render_browser_pane(
         .iter()
         .map(|entry| {
             let style = if entry.is_dir {
-                Style::default().fg(c(m.blue))
+                Style::default().fg(theme.accent)
             } else {
-                Style::default().fg(c(m.text))
+                Style::default().fg(theme.fg)
             };
             ListItem::new(entry.name.clone()).style(style)
         })
@@ -84,35 +79,30 @@ fn render_browser_pane(
 
     let list = List::new(items).highlight_style(
         Style::default()
-            .bg(c(m.surface1))
+            .bg(theme.bg_sel)
             .add_modifier(Modifier::BOLD),
     );
 
     frame.render_stateful_widget(list, list_area, &mut list_state);
 }
 
-fn render_viewer_pane(
-    frame: &mut Frame,
-    app: &mut BrowserApp,
-    area: Rect,
-    m: &catppuccin::FlavorColors,
-) {
+fn render_viewer_pane(frame: &mut Frame, app: &mut BrowserApp, area: Rect, theme: &Theme) {
     if let Some(ref mut viewer) = app.viewer {
         ui(frame, viewer, area);
     } else {
         let hint = Paragraph::new("Navigate to a file and press Enter to open it")
             .alignment(Alignment::Center)
-            .style(Style::default().fg(c(m.overlay1)))
+            .style(Style::default().fg(theme.fg_muted))
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(c(m.overlay0))),
+                    .border_style(Style::default().fg(theme.border_idle)),
             );
         frame.render_widget(hint, area);
     }
 }
 
-fn browser_shortcut_bar<'a>(app: &BrowserApp, m: &catppuccin::FlavorColors) -> Line<'a> {
+fn browser_shortcut_bar<'a>(app: &BrowserApp, theme: &Theme) -> Line<'a> {
     type Shortcuts = &'static [(&'static str, &'static str)];
 
     let keys: Shortcuts = if !app.browser_visible {
@@ -139,11 +129,11 @@ fn browser_shortcut_bar<'a>(app: &BrowserApp, m: &catppuccin::FlavorColors) -> L
     };
 
     let key_style = Style::default()
-        .bg(c(m.blue))
-        .fg(c(m.base))
+        .bg(theme.accent)
+        .fg(theme.bg)
         .add_modifier(Modifier::BOLD);
-    let label_style = Style::default().bg(c(m.mantle)).fg(c(m.subtext0));
-    let gap_style = Style::default().bg(c(m.mantle));
+    let label_style = Style::default().bg(theme.bg_alt).fg(theme.fg_dim);
+    let gap_style = Style::default().bg(theme.bg_alt);
 
     let mut spans = Vec::new();
     for (key, action) in keys {
@@ -152,7 +142,7 @@ fn browser_shortcut_bar<'a>(app: &BrowserApp, m: &catppuccin::FlavorColors) -> L
         spans.push(Span::styled("  ", gap_style));
     }
 
-    Line::from(spans).style(Style::default().bg(c(m.mantle)))
+    Line::from(spans).style(Style::default().bg(theme.bg_alt))
 }
 
 /// Truncate a path from the left so it fits within `max_chars`, prefixing with `…`.
@@ -215,12 +205,15 @@ mod tests {
     }
 
     fn make_app() -> crate::browser::app::BrowserApp {
-        crate::browser::app::BrowserApp::new(Box::new(StubBackend), "/test".to_string())
+        crate::browser::app::BrowserApp::new(
+            Box::new(StubBackend),
+            "/test".to_string(),
+            crate::theme::default_theme(),
+        )
     }
 
     fn bar_text(app: &crate::browser::app::BrowserApp) -> String {
-        let m = &catppuccin::PALETTE.mocha.colors;
-        let line = browser_shortcut_bar(app, m);
+        let line = browser_shortcut_bar(app, crate::theme::default_theme());
         line.spans.iter().map(|s| s.content.as_ref()).collect()
     }
 
@@ -264,7 +257,8 @@ mod tests {
     fn test_shortcut_bar_browser_focused_with_viewer_no_quit() {
         use polars::prelude::*;
         let df = df!("col" => &[1i64]).unwrap();
-        let viewer = crate::app::App::new(df, "test.csv".to_string());
+        let viewer =
+            crate::app::App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         let mut app = make_app();
         app.viewer = Some(viewer);
         let text = bar_text(&app);

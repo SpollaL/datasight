@@ -103,8 +103,41 @@ pub(crate) fn dispatch_viewer_key(app: &mut App, key: &event::KeyEvent) {
                 app.build_unique_values();
                 app.mode = Mode::UniqueValues;
             }
+            event::KeyCode::Char('T') => {
+                app.picker = Some(crate::theme_picker::ThemePicker::open(app.theme));
+                app.mode = Mode::ThemePicker;
+            }
             _ => {}
         },
+        Mode::ThemePicker => {
+            if let Some(picker) = app.picker.as_mut() {
+                match key.code {
+                    event::KeyCode::Char('j') | event::KeyCode::Down => {
+                        app.theme = picker.move_down();
+                    }
+                    event::KeyCode::Char('k') | event::KeyCode::Up => {
+                        app.theme = picker.move_up();
+                    }
+                    event::KeyCode::Enter => {
+                        if let Some(path) = crate::theme::state_path() {
+                            if let Err(e) =
+                                crate::theme::write_state_theme_at(&path, app.theme.name)
+                            {
+                                eprintln!("warning: could not save theme to {:?}: {}", path, e);
+                            }
+                        }
+                        app.picker = None;
+                        app.mode = Mode::Normal;
+                    }
+                    event::KeyCode::Esc => {
+                        app.theme = picker.original_theme();
+                        app.picker = None;
+                        app.mode = Mode::Normal;
+                    }
+                    _ => {}
+                }
+            }
+        }
         Mode::Search => match key.code {
             event::KeyCode::Backspace => pop_char_from_search_query(app),
             event::KeyCode::Enter => to_first_search_query_result(app),

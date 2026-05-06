@@ -2,6 +2,8 @@ mod app;
 mod browser;
 mod config;
 mod events;
+mod theme;
+mod theme_picker;
 mod ui;
 
 use app::App;
@@ -23,6 +25,9 @@ struct Cli {
     /// Defaults to '\t' for .tsv files and ',' for everything else.
     #[arg(short = 'd', long, value_name = "CHAR")]
     delimiter: Option<String>,
+    /// Color theme: mocha (default), latte, frappe, macchiato, gruvbox-dark, nord, dracula, solarized-dark, tokyo-night
+    #[arg(long, global = true)]
+    theme: Option<String>,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -265,13 +270,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::io::IsTerminal;
     let cli = Cli::parse();
 
+    let theme: &'static theme::Theme = {
+        let cli_theme = cli.theme.as_deref();
+        let env_theme = std::env::var("DATASIGHT_THEME").ok();
+        let state_theme = theme::state_path().and_then(|p| theme::read_state_theme_at(&p));
+        match theme::resolve_theme(cli_theme, env_theme, state_theme) {
+            Ok(t) => t,
+            Err(msg) => {
+                eprintln!("{}", msg);
+                std::process::exit(2);
+            }
+        }
+    };
+
     if let Some(Commands::Browse { path }) = cli.command {
         let root = path.unwrap_or_else(|| ".".to_string());
         let (backend, resolved) = browser::build_backend(&root).unwrap_or_else(|err| {
             eprintln!("Error: {}", err);
             std::process::exit(1);
         });
-        let browser_app = browser::app::BrowserApp::new(backend, resolved);
+        let browser_app = browser::app::BrowserApp::new(backend, resolved, theme);
         return ratatui::run(|terminal| browser::events::run_browser_app(terminal, browser_app));
     }
 
@@ -310,7 +328,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let app = App::new(df, title);
+    let app = App::new(df, title, theme);
     ratatui::run(|terminal| run_app(terminal, app))
 }
 
