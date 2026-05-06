@@ -373,8 +373,8 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
             &[
                 ("← →", "Navigate"),
                 ("Space", "Toggle Y"),
-                ("Enter", "Pick X"),
-                ("i", "Use row index as X"),
+                ("Enter", "Pick X axis"),
+                ("i", "Plot now (row index as X)"),
                 ("Esc", "Cancel"),
             ],
             &[],
@@ -784,7 +784,10 @@ fn help_text(theme: &Theme) -> Text<'static> {
         key("Space", "Toggle Y column (pick-Y)"),
         key("Enter", "pick-Y: advance to pick-X  |  pick-X: show chart"),
         key("i", "Plot against row index (skip pick-X)"),
-        key("t", "Cycle chart type (line → bar → histogram; line ↔ bar for multi-Y)"),
+        key(
+            "t",
+            "Cycle chart type (line → bar → histogram; line ↔ bar for multi-Y)",
+        ),
         key("Esc / p", "Close chart"),
         Line::raw(""),
         section("Theme"),
