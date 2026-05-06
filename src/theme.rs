@@ -1,4 +1,5 @@
 use ratatui::style::Color;
+use std::sync::OnceLock;
 
 pub struct Base16Scheme {
     pub name: &'static str,
@@ -264,6 +265,44 @@ pub static TOKYO_NIGHT: Base16Scheme = Base16Scheme {
     ],
 };
 
+fn all_themes_init() -> Vec<Theme> {
+    [
+        &MOCHA,
+        &LATTE,
+        &FRAPPE,
+        &MACCHIATO,
+        &GRUVBOX_DARK,
+        &NORD,
+        &DRACULA,
+        &SOLARIZED_DARK,
+        &TOKYO_NIGHT,
+    ]
+    .iter()
+    .map(|s| Theme::from_scheme(s))
+    .collect()
+}
+
+pub fn list_themes() -> &'static [Theme] {
+    static THEMES: OnceLock<Vec<Theme>> = OnceLock::new();
+    THEMES.get_or_init(all_themes_init)
+}
+
+pub fn theme_by_name(name: &str) -> Option<&'static Theme> {
+    list_themes().iter().find(|t| t.name == name)
+}
+
+pub fn default_theme() -> &'static Theme {
+    theme_by_name("mocha").expect("mocha is always present")
+}
+
+pub fn theme_names_csv() -> String {
+    list_themes()
+        .iter()
+        .map(|t| t.name)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,5 +351,42 @@ mod tests {
             assert_eq!(t.name, n, "name field for {}", n);
             assert_ne!(t.bg, t.fg, "bg == fg for {}", n);
         }
+    }
+
+    #[test]
+    fn theme_by_name_returns_known() {
+        assert_eq!(theme_by_name("mocha").map(|t| t.name), Some("mocha"));
+        assert_eq!(theme_by_name("nord").map(|t| t.name), Some("nord"));
+        assert_eq!(
+            theme_by_name("gruvbox-dark").map(|t| t.name),
+            Some("gruvbox-dark")
+        );
+    }
+
+    #[test]
+    fn theme_by_name_returns_none_for_unknown() {
+        assert!(theme_by_name("does-not-exist").is_none());
+        assert!(theme_by_name("").is_none());
+    }
+
+    #[test]
+    fn list_themes_returns_all_nine() {
+        let names: Vec<&str> = list_themes().iter().map(|t| t.name).collect();
+        assert_eq!(names.len(), 9);
+        assert!(names.contains(&"mocha"));
+        assert!(names.contains(&"tokyo-night"));
+    }
+
+    #[test]
+    fn theme_names_alphabetical_helper_returns_csv() {
+        let csv = theme_names_csv();
+        assert!(csv.contains("mocha"));
+        assert!(csv.contains("nord"));
+        assert!(csv.contains(", "));
+    }
+
+    #[test]
+    fn default_theme_is_mocha() {
+        assert_eq!(default_theme().name, "mocha");
     }
 }
