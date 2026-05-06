@@ -15,33 +15,26 @@ pub fn run_browser_app(
         if let event::Event::Key(key) = event::read()? {
             let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
 
-            // Global ctrl bindings — intercepted before focus dispatch.
-            if ctrl {
-                match key.code {
-                    event::KeyCode::Char('e') => {
-                        app.browser_visible = !app.browser_visible;
-                        // If browser was just hidden and focus was there, shift to viewer.
-                        if !app.browser_visible
-                            && app.focus == Focus::Browser
-                            && app.viewer.is_some()
-                        {
-                            app.focus = Focus::Viewer;
-                        }
-                        continue;
-                    }
-                    event::KeyCode::Char('h') => {
+            // ctrl-e: toggle browser sidebar visibility.
+            if ctrl && key.code == event::KeyCode::Char('e') {
+                app.browser_visible = !app.browser_visible;
+                if !app.browser_visible && app.focus == Focus::Browser && app.viewer.is_some() {
+                    app.focus = Focus::Viewer;
+                }
+                continue;
+            }
+
+            // Tab: toggle focus between browser and viewer.
+            if key.code == event::KeyCode::Tab {
+                match app.focus {
+                    Focus::Browser if app.viewer.is_some() => app.focus = Focus::Viewer,
+                    Focus::Viewer => {
                         app.browser_visible = true;
                         app.focus = Focus::Browser;
-                        continue;
-                    }
-                    event::KeyCode::Char('l') => {
-                        if app.viewer.is_some() {
-                            app.focus = Focus::Viewer;
-                        }
-                        continue;
                     }
                     _ => {}
                 }
+                continue;
             }
 
             match app.focus {
@@ -64,7 +57,7 @@ fn handle_browser_key(app: &mut BrowserApp, key: &event::KeyEvent) {
     match key.code {
         event::KeyCode::Char('j') | event::KeyCode::Down => app.navigate_down(),
         event::KeyCode::Char('k') | event::KeyCode::Up => app.navigate_up(),
-        event::KeyCode::Char('h') => app.ascend(),
+        event::KeyCode::Esc => app.ascend(),
         event::KeyCode::Char('.') | event::KeyCode::Enter => open_or_descend(app),
         event::KeyCode::Char('q') if app.viewer.is_none() => app.should_quit = true,
         _ => {}

@@ -118,23 +118,23 @@ fn browser_shortcut_bar<'a>(app: &BrowserApp, m: &catppuccin::FlavorColors) -> L
     let keys: Shortcuts = if !app.browser_visible {
         &[("ctrl-e", "Show browser")]
     } else if app.focus == Focus::Viewer {
-        &[("ctrl-h", "Browser"), ("ctrl-e", "Hide")]
+        &[("tab", "Browser"), ("ctrl-e", "Hide")]
     } else if app.viewer.is_none() {
         &[
             ("j / k", "Navigate"),
-            ("Enter", "Open"),
-            ("h", "Up"),
+            (". / Enter", "Open"),
+            ("Esc", "Up"),
             ("ctrl-e", "Hide"),
-            ("ctrl-l", "Viewer"),
+            ("tab", "Viewer"),
             ("q", "Quit"),
         ]
     } else {
         &[
             ("j / k", "Navigate"),
-            ("Enter", "Open"),
-            ("h", "Up"),
+            (". / Enter", "Open"),
+            ("Esc", "Up"),
             ("ctrl-e", "Hide"),
-            ("ctrl-l", "Viewer"),
+            ("tab", "Viewer"),
         ]
     };
 
@@ -242,7 +242,7 @@ mod tests {
         let mut app = make_app();
         app.focus = crate::browser::app::Focus::Viewer;
         let text = bar_text(&app);
-        assert!(text.contains("ctrl-h"), "expected ctrl-h in: {}", text);
+        assert!(text.contains("tab"), "expected tab in: {}", text);
         assert!(text.contains("Browser"), "expected 'Browser' in: {}", text);
     }
 
