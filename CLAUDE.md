@@ -13,14 +13,18 @@ git config core.hooksPath .githooks
 ## Commands
 
 ```bash
-cargo build                          # debug build
-cargo run -- <file.csv|file.parquet> # run with a file
-cargo test                           # run tests
-cargo clippy -- -D warnings          # lint (CI enforces warnings as errors)
-cargo fmt                            # format
-cargo fmt --check                    # check formatting (CI)
-cargo build --profile dist           # release/distribution build (thin LTO)
-vhs demo.tape                        # regenerate .github/assets/demo.gif (requires vhs + ttyd)
+cargo build                                             # debug build
+cargo run -- <file.csv|file.parquet>                    # run with a file
+cargo run -- browse <path|az://container|s3://bucket>   # file browser TUI
+cargo test                                              # run tests
+cargo clippy -- -D warnings                             # lint (CI enforces warnings as errors)
+cargo fmt                                               # format
+cargo fmt --check                                       # check formatting (CI)
+cargo build --profile dist                              # release/distribution build (thin LTO)
+cargo build --features azure                            # include Azure backend
+cargo build --features aws                              # include S3 backend
+cargo install --path . --features azure                 # install with Azure support
+vhs demo.tape                                           # regenerate .github/assets/demo.gif (requires vhs + ttyd)
 ```
 
 ## Pre-release QA
@@ -73,3 +77,32 @@ Source files under `src/`:
 2. `App::new` stores it as `df` and sets `view = df.clone()`.
 3. User actions (filter, sort, group-by) call methods on `App` that recompute `view` from `df`.
 4. `ui()` renders only the visible window of `view` using `ViewportState.row`/`col` offsets.
+
+### Browse subcommand
+
+`src/browser/` contains the file browser feature (`datasight browse`):
+
+- **`mod.rs`** — `FileBrowser` trait, `Entry`, `BrowserError`, `build_backend`, `load_file_for_browser`
+- **`app.rs`** — `BrowserApp` state, `Focus` enum (`Browser`/`Viewer`), navigation methods
+- **`events.rs`** — `run_browser_app` event loop; `Tab` toggles focus, `ctrl-e` toggles sidebar, `Esc` ascends
+- **`ui.rs`** — `browser_ui` split-pane renderer, `browser_shortcut_bar` (context-aware 1-row hint bar)
+- **`local.rs`** — `LocalBackend` (always compiled)
+- **`azure.rs`** — `AzureBackend` behind `--features azure` (object_store + tokio)
+- **`s3.rs`** — `S3Backend` behind `--features aws`
+
+**Gotchas:**
+- `ui()` in `src/ui.rs` takes `area: Rect` — needed so the viewer renders in a sub-pane
+- `dispatch_viewer_key` in `src/events.rs` is `pub(crate)` — reused by browser event loop
+- `e` is taken by the viewer's stats toggle; browser sidebar uses `ctrl-e`
+- Azure: `object_store::MicrosoftAzureBuilder::from_env()` ignores `AZURE_STORAGE_CONNECTION_STRING`; `azure.rs` parses it manually. HTTP `BlobEndpoint` values (Azurite) require `with_allow_http(true)`.
+
+### Browse keybindings
+
+| Key | Action |
+|---|---|
+| `j` / `k` | Navigate list |
+| `. / Enter` | Open file or enter directory |
+| `Esc` | Go up to parent |
+| `Tab` | Toggle focus browser ↔ viewer |
+| `ctrl-e` | Toggle browser sidebar |
+| `q` | Quit (only when no viewer loaded) |
