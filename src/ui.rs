@@ -38,12 +38,12 @@ pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme;
 
     if matches!(app.mode, Mode::Plot) {
-        render_plot(frame, app, theme);
+        render_plot(frame, app, theme, area);
         return;
     }
 
     if matches!(app.mode, Mode::ColumnsView) {
-        render_columns_view(frame, app, theme);
+        render_columns_view(frame, app, theme, area);
         return;
     }
 
@@ -898,8 +898,7 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, theme: &Theme) {
     frame.render_stateful_widget(table, zones[1], &mut app.unique_values.state);
 }
 
-fn render_columns_view(frame: &mut Frame, app: &mut App, theme: &Theme) {
-    let full_area = frame.area();
+fn render_columns_view(frame: &mut Frame, app: &mut App, theme: &Theme, full_area: Rect) {
     frame.render_widget(Clear, full_area);
 
     let chunks = Layout::default()
@@ -1171,8 +1170,7 @@ fn render_histogram(frame: &mut Frame, app: &App, theme: &Theme, y_idx: usize, f
     frame.render_widget(chart, chart_area);
 }
 
-fn render_plot(frame: &mut Frame, app: &App, theme: &Theme) {
-    let full_area = frame.area();
+fn render_plot(frame: &mut Frame, app: &App, theme: &Theme, full_area: Rect) {
     frame.render_widget(Clear, full_area);
 
     if app.plot.y_cols.is_empty() {
