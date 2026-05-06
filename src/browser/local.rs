@@ -63,25 +63,31 @@ mod tests {
     #[test]
     fn test_list_dirs_come_before_files() {
         let tmp = std::env::temp_dir().join("datasight_test_list");
+        let _ = std::fs::remove_dir_all(&tmp); // clean before setup
         let sub = tmp.join("subdir");
         let _ = std::fs::create_dir_all(&sub);
         let _ = std::fs::write(tmp.join("data.csv"), "a,b\n1,2");
         let backend = LocalBackend;
         let entries = backend.list(tmp.to_str().unwrap()).expect("list should succeed");
-        if entries.len() >= 2 {
-            assert!(entries[0].is_dir, "directories should appear before files");
-        }
+        assert_eq!(entries.len(), 2, "expected exactly 1 dir + 1 file");
+        assert!(entries[0].is_dir, "directory should appear before file");
+        assert!(!entries[1].is_dir, "file should appear after directory");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn test_list_hidden_files_excluded() {
         let tmp = std::env::temp_dir().join("datasight_test_hidden");
+        let _ = std::fs::remove_dir_all(&tmp); // clean before setup
         let _ = std::fs::create_dir_all(&tmp);
         let _ = std::fs::write(tmp.join(".hidden.csv"), "a,b\n1,2");
         let _ = std::fs::write(tmp.join("visible.csv"), "a,b\n1,2");
         let backend = LocalBackend;
         let entries = backend.list(tmp.to_str().unwrap()).expect("list should succeed");
+        assert!(
+            entries.iter().any(|e| e.name == "visible.csv"),
+            "visible.csv should be present in listing"
+        );
         assert!(
             entries.iter().all(|e| !e.name.starts_with('.')),
             "hidden files should be excluded"
