@@ -97,7 +97,11 @@ fn parent_path(path: &str) -> String {
         .parent()
         .and_then(|p| {
             let s = p.to_string_lossy();
-            if s.is_empty() { None } else { Some(s.to_string()) }
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_string())
+            }
         })
         .unwrap_or_else(|| path.to_string())
 }
@@ -126,18 +130,23 @@ mod tests {
     }
 
     fn make_app(entries: Vec<Entry>) -> BrowserApp {
-        BrowserApp::new(
-            Box::new(StubBackend { entries }),
-            "/test/root".to_string(),
-        )
+        BrowserApp::new(Box::new(StubBackend { entries }), "/test/root".to_string())
     }
 
     fn file_entry(name: &str) -> Entry {
-        Entry { name: name.to_string(), path: format!("/test/{}", name), is_dir: false }
+        Entry {
+            name: name.to_string(),
+            path: format!("/test/{}", name),
+            is_dir: false,
+        }
     }
 
     fn dir_entry(name: &str) -> Entry {
-        Entry { name: name.to_string(), path: format!("/test/{}", name), is_dir: true }
+        Entry {
+            name: name.to_string(),
+            path: format!("/test/{}", name),
+            is_dir: true,
+        }
     }
 
     #[test]
@@ -233,20 +242,14 @@ mod tests {
 
     #[test]
     fn test_ascend_no_op_at_local_root() {
-        let mut app = BrowserApp::new(
-            Box::new(StubBackend { entries: vec![] }),
-            "/".to_string(),
-        );
+        let mut app = BrowserApp::new(Box::new(StubBackend { entries: vec![] }), "/".to_string());
         app.ascend();
         assert_eq!(app.cwd, "/");
     }
 
     #[test]
     fn test_new_sets_status_on_list_error() {
-        let app = BrowserApp::new(
-            Box::new(ErrorBackend),
-            "/nonexistent".to_string(),
-        );
+        let app = BrowserApp::new(Box::new(ErrorBackend), "/nonexistent".to_string());
         assert!(app.status.is_some(), "status should be set on list error");
         assert!(app.entries.is_empty(), "entries should be empty on error");
     }

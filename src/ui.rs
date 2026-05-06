@@ -1940,7 +1940,9 @@ mod null_render_tests {
 
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| ui(frame, &mut app, frame.area())).unwrap();
+        terminal
+            .draw(|frame| ui(frame, &mut app, frame.area()))
+            .unwrap();
 
         let buffer = terminal.backend().buffer();
         let expected_fg = c(PALETTE.mocha.colors.overlay1);
@@ -1972,7 +1974,9 @@ mod null_render_tests {
 
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| ui(frame, &mut app, frame.area())).unwrap();
+        terminal
+            .draw(|frame| ui(frame, &mut app, frame.area()))
+            .unwrap();
 
         let buffer = terminal.backend().buffer();
         let area = buffer.area;
@@ -1998,7 +2002,9 @@ mod null_render_tests {
 
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| ui(frame, &mut app, frame.area())).unwrap();
+        terminal
+            .draw(|frame| ui(frame, &mut app, frame.area()))
+            .unwrap();
 
         let buffer = terminal.backend().buffer();
         let null_count = (0..buffer.area.height)

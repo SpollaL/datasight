@@ -9,8 +9,8 @@ pub mod azure;
 #[cfg(feature = "aws")]
 pub mod s3;
 
-use std::fmt;
 use polars::prelude::SerReader;
+use std::fmt;
 
 pub trait FileBrowser {
     fn list(&self, prefix: &str) -> Result<Vec<Entry>, BrowserError>;
@@ -102,9 +102,7 @@ pub(crate) fn load_file_for_browser(
     backend: &dyn FileBrowser,
 ) -> Result<(polars::prelude::DataFrame, String), Box<dyn std::error::Error>> {
     if path.starts_with("az://") || path.starts_with("s3://") {
-        let bytes = backend
-            .download_bytes(path)
-            .map_err(|e| e.to_string())?;
+        let bytes = backend.download_bytes(path).map_err(|e| e.to_string())?;
         let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
         let df = if ext == "parquet" {
             polars::prelude::ParquetReader::new(std::io::Cursor::new(bytes)).finish()?
@@ -166,7 +164,10 @@ mod tests {
         let result = build_backend("tests/fixtures");
         assert!(result.is_ok());
         let (_, resolved) = result.unwrap();
-        assert!(std::path::Path::new(&resolved).is_absolute(), "resolved path should be absolute");
+        assert!(
+            std::path::Path::new(&resolved).is_absolute(),
+            "resolved path should be absolute"
+        );
     }
 
     #[test]

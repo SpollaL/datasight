@@ -59,7 +59,10 @@ fn csv_options(delimiter: u8) -> CsvReadOptions {
         .with_parse_options(CsvParseOptions::default().with_separator(delimiter))
 }
 
-pub(crate) fn parse_buf(buf: Vec<u8>, delimiter: Option<u8>) -> Result<DataFrame, Box<dyn std::error::Error>> {
+pub(crate) fn parse_buf(
+    buf: Vec<u8>,
+    delimiter: Option<u8>,
+) -> Result<DataFrame, Box<dyn std::error::Error>> {
     let df = match detect_format(&buf) {
         StdinFormat::Json => JsonReader::new(std::io::Cursor::new(buf))
             .with_json_format(JsonFormat::Json)

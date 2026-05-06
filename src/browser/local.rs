@@ -1,4 +1,4 @@
-use crate::browser::{BrowserError, Entry, FileBrowser, is_supported};
+use crate::browser::{is_supported, BrowserError, Entry, FileBrowser};
 use std::fs;
 
 pub struct LocalBackend;
@@ -7,8 +7,7 @@ impl FileBrowser for LocalBackend {
     fn list(&self, prefix: &str) -> Result<Vec<Entry>, BrowserError> {
         // Canonicalize the prefix to ensure we get absolute paths
         let abs = fs::canonicalize(prefix).map_err(|e| BrowserError::NotFound(e.to_string()))?;
-        let read_dir =
-            fs::read_dir(&abs).map_err(|e| BrowserError::NotFound(e.to_string()))?;
+        let read_dir = fs::read_dir(&abs).map_err(|e| BrowserError::NotFound(e.to_string()))?;
 
         let mut dirs: Vec<Entry> = Vec::new();
         let mut files: Vec<Entry> = Vec::new();
@@ -22,9 +21,17 @@ impl FileBrowser for LocalBackend {
             let is_dir = result.file_type().map(|t| t.is_dir()).unwrap_or(false);
 
             if is_dir {
-                dirs.push(Entry { name, path, is_dir: true });
+                dirs.push(Entry {
+                    name,
+                    path,
+                    is_dir: true,
+                });
             } else if is_supported(&name) {
-                files.push(Entry { name, path, is_dir: false });
+                files.push(Entry {
+                    name,
+                    path,
+                    is_dir: false,
+                });
             }
         }
 
@@ -68,7 +75,9 @@ mod tests {
         let _ = std::fs::create_dir_all(&sub);
         let _ = std::fs::write(tmp.join("data.csv"), "a,b\n1,2");
         let backend = LocalBackend;
-        let entries = backend.list(tmp.to_str().unwrap()).expect("list should succeed");
+        let entries = backend
+            .list(tmp.to_str().unwrap())
+            .expect("list should succeed");
         assert_eq!(entries.len(), 2, "expected exactly 1 dir + 1 file");
         assert!(entries[0].is_dir, "directory should appear before file");
         assert!(!entries[1].is_dir, "file should appear after directory");
@@ -83,7 +92,9 @@ mod tests {
         let _ = std::fs::write(tmp.join(".hidden.csv"), "a,b\n1,2");
         let _ = std::fs::write(tmp.join("visible.csv"), "a,b\n1,2");
         let backend = LocalBackend;
-        let entries = backend.list(tmp.to_str().unwrap()).expect("list should succeed");
+        let entries = backend
+            .list(tmp.to_str().unwrap())
+            .expect("list should succeed");
         assert!(
             entries.iter().any(|e| e.name == "visible.csv"),
             "visible.csv should be present in listing"

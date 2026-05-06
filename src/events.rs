@@ -308,7 +308,8 @@ fn to_first_search_query_result(app: &mut App) {
     if app.search.results.is_empty() {
         return;
     }
-    app.state.select(Some(app.search.results[app.search.cursor]));
+    app.state
+        .select(Some(app.search.results[app.search.cursor]));
     app.mode = Mode::Normal;
 }
 
@@ -326,7 +327,9 @@ fn to_normal_mode_with_filter(app: &mut App) {
                 .iter()
                 .any(|(c, q)| c == &col_name && q == &app.filter.query);
             if !already_exists {
-                app.filter.filters.push((col_name, app.filter.query.clone()));
+                app.filter
+                    .filters
+                    .push((col_name, app.filter.query.clone()));
                 app.update_filter();
             }
         }
@@ -361,7 +364,8 @@ fn go_to_next_search_result(app: &mut App) {
     } else {
         0
     };
-    app.state.select(Some(app.search.results[app.search.cursor]));
+    app.state
+        .select(Some(app.search.results[app.search.cursor]));
 }
 
 fn go_to_previous_search_result(app: &mut App) {
@@ -373,7 +377,8 @@ fn go_to_previous_search_result(app: &mut App) {
     } else {
         app.search.results.len() - 1
     };
-    app.state.select(Some(app.search.results[app.search.cursor]));
+    app.state
+        .select(Some(app.search.results[app.search.cursor]));
 }
 
 fn jump_to_selected_column(app: &mut App) {
