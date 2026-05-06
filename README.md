@@ -108,6 +108,7 @@ Azure reads `AZURE_STORAGE_CONNECTION_STRING` or individual `AZURE_STORAGE_ACCOU
 | `Esc` | Go up to parent |
 | `Tab` | Switch focus browser ↔ viewer |
 | `ctrl-e` | Toggle browser sidebar |
+| `T` | Open theme picker |
 | `q` | Quit (when no file is open) |
 ## Themes
 
@@ -211,6 +212,7 @@ Active sorts are shown in the header with `①▲` / `②▼` glyphs and summari
 | `h` / `←` / `l` / `→` | Pick-Y / Pick-X | Move between columns |
 | `Space` | Pick-Y | Toggle the current column as a Y series (select one or many) |
 | `Enter` | Pick-Y | Confirm Y selection and advance to pick-X |
+| `i` | Pick-Y | Use row index as X and render the chart immediately (skips pick-X) |
 | `Enter` | Pick-X | Confirm X column and render the chart |
 | `Esc` | Pick-Y / Pick-X | Cancel (pick-X goes back to pick-Y; pick-Y returns to normal) |
 | `t` | Plot | Cycle chart type (line → bar → histogram for single-Y; line ↔ bar for multi-Y) |
