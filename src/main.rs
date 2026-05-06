@@ -5,7 +5,7 @@ mod events;
 mod ui;
 
 use app::App;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use events::run_app;
 use polars::prelude::*;
 use std::path::Path;
@@ -23,6 +23,18 @@ struct Cli {
     /// Defaults to '\t' for .tsv files and ',' for everything else.
     #[arg(short = 'd', long, value_name = "CHAR")]
     delimiter: Option<String>,
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Browse the filesystem (local, az://, s3://) and open files interactively
+    Browse {
+        /// Root path to browse. Defaults to the current directory.
+        /// Use az://container/ for Azure or s3://bucket/ for AWS.
+        path: Option<String>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -252,6 +264,16 @@ fn pick_date_format(df: &DataFrame, name: &str, non_null: usize) -> Option<Expr>
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::io::IsTerminal;
     let cli = Cli::parse();
+
+    if let Some(Commands::Browse { path }) = cli.command {
+        let root = path.unwrap_or_else(|| ".".to_string());
+        let (backend, resolved) = browser::build_backend(&root).unwrap_or_else(|err| {
+            eprintln!("Error: {}", err);
+            std::process::exit(1);
+        });
+        let browser_app = browser::app::BrowserApp::new(backend, resolved);
+        return ratatui::run(|terminal| browser::events::run_browser_app(terminal, browser_app));
+    }
 
     let delimiter = cli
         .delimiter
