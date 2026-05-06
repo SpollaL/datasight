@@ -75,7 +75,7 @@ fn open_or_descend(app: &mut BrowserApp) {
     } else {
         match load_file_for_browser(&entry.path, app.backend.as_ref()) {
             Ok((df, title)) => {
-                app.viewer = Some(App::new(df, title, crate::theme::default_theme()));
+                app.viewer = Some(App::new(df, title, app.theme));
                 app.focus = Focus::Viewer;
                 app.status = None;
             }

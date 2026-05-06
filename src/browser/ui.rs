@@ -1,5 +1,5 @@
 use crate::browser::app::{BrowserApp, Focus};
-use crate::theme::{default_theme, Theme};
+use crate::theme::Theme;
 use crate::ui::ui;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 pub fn browser_ui(frame: &mut Frame, app: &mut BrowserApp) {
-    let theme: &Theme = default_theme();
+    let theme: &Theme = app.theme;
 
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(frame.area());
@@ -211,11 +211,15 @@ mod tests {
     }
 
     fn make_app() -> crate::browser::app::BrowserApp {
-        crate::browser::app::BrowserApp::new(Box::new(StubBackend), "/test".to_string())
+        crate::browser::app::BrowserApp::new(
+            Box::new(StubBackend),
+            "/test".to_string(),
+            crate::theme::default_theme(),
+        )
     }
 
     fn bar_text(app: &crate::browser::app::BrowserApp) -> String {
-        let line = browser_shortcut_bar(app, default_theme());
+        let line = browser_shortcut_bar(app, crate::theme::default_theme());
         line.spans.iter().map(|s| s.content.as_ref()).collect()
     }
 

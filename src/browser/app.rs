@@ -1,5 +1,6 @@
 use crate::app::App;
 use crate::browser::{Entry, FileBrowser};
+use crate::theme::Theme;
 
 pub struct BrowserApp {
     pub backend: Box<dyn FileBrowser>,
@@ -11,6 +12,7 @@ pub struct BrowserApp {
     pub focus: Focus,
     pub status: Option<String>,
     pub should_quit: bool,
+    pub theme: &'static Theme,
 }
 
 #[derive(Debug, PartialEq)]
@@ -20,7 +22,11 @@ pub enum Focus {
 }
 
 impl BrowserApp {
-    pub fn new(backend: Box<dyn FileBrowser>, root_path: String) -> Self {
+    pub fn new(
+        backend: Box<dyn FileBrowser>,
+        root_path: String,
+        theme: &'static Theme,
+    ) -> Self {
         let (entries, status) = match backend.list(&root_path) {
             Ok(e) => (e, None),
             Err(e) => (Vec::new(), Some(e.to_string())),
@@ -35,6 +41,7 @@ impl BrowserApp {
             focus: Focus::Browser,
             status,
             should_quit: false,
+            theme,
         }
     }
 
@@ -130,7 +137,11 @@ mod tests {
     }
 
     fn make_app(entries: Vec<Entry>) -> BrowserApp {
-        BrowserApp::new(Box::new(StubBackend { entries }), "/test/root".to_string())
+        BrowserApp::new(
+            Box::new(StubBackend { entries }),
+            "/test/root".to_string(),
+            crate::theme::default_theme(),
+        )
     }
 
     fn file_entry(name: &str) -> Entry {
@@ -235,6 +246,7 @@ mod tests {
         let mut app = BrowserApp::new(
             Box::new(StubBackend { entries: vec![] }),
             "/test/root/child".to_string(),
+            crate::theme::default_theme(),
         );
         app.ascend();
         assert_eq!(app.cwd, "/test/root");
@@ -242,14 +254,22 @@ mod tests {
 
     #[test]
     fn test_ascend_no_op_at_local_root() {
-        let mut app = BrowserApp::new(Box::new(StubBackend { entries: vec![] }), "/".to_string());
+        let mut app = BrowserApp::new(
+            Box::new(StubBackend { entries: vec![] }),
+            "/".to_string(),
+            crate::theme::default_theme(),
+        );
         app.ascend();
         assert_eq!(app.cwd, "/");
     }
 
     #[test]
     fn test_new_sets_status_on_list_error() {
-        let app = BrowserApp::new(Box::new(ErrorBackend), "/nonexistent".to_string());
+        let app = BrowserApp::new(
+            Box::new(ErrorBackend),
+            "/nonexistent".to_string(),
+            crate::theme::default_theme(),
+        );
         assert!(app.status.is_some(), "status should be set on list error");
         assert!(app.entries.is_empty(), "entries should be empty on error");
     }

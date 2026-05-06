@@ -288,7 +288,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Error: {}", err);
             std::process::exit(1);
         });
-        let browser_app = browser::app::BrowserApp::new(backend, resolved);
+        let browser_app = browser::app::BrowserApp::new(backend, resolved, theme);
         return ratatui::run(|terminal| browser::events::run_browser_app(terminal, browser_app));
     }
 
