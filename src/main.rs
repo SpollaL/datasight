@@ -2,6 +2,7 @@ mod app;
 mod browser;
 mod config;
 mod events;
+mod theme;
 mod ui;
 
 use app::App;
