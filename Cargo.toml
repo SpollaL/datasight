@@ -10,14 +10,26 @@ keywords = ["csv", "parquet", "tui", "terminal", "viewer"]
 categories = ["command-line-utilities", "visualization"]
 exclude = [".github", "demo.tape", "tests/fixtures/*.parquet", "tests/fixtures/*.ndjson"]
 
+[features]
+azure = ["dep:object_store", "object_store/azure", "dep:tokio"]
+aws   = ["dep:object_store", "object_store/aws",   "dep:tokio"]
+
 [dependencies]
 crossterm = "0.29.0"
 ratatui = "0.30.0"
 polars = { version = "0.46", features = ["csv", "parquet", "lazy", "strings", "regex", "json", "temporal", "dtype-date", "dtype-datetime", "dtype-decimal"] }
 catppuccin = "2"
 clap = { version = "4", features = ["derive"] }
+object_store = { version = "0.11", optional = true }
+tokio        = { version = "1",    features = ["rt-multi-thread"], optional = true }
 
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+[patch.crates-io]
+zerocopy = { git = "https://github.com/google/zerocopy", tag = "v0.8.40" }
+zerocopy-derive = { git = "https://github.com/google/zerocopy", tag = "v0.8.40" }
+lz4-sys = { git = "https://github.com/10XGenomics/lz4-rs", rev = "287dbd063a53738917f1078192185839215d10a0" }
+brotli = { git = "https://github.com/dropbox/rust-brotli", tag = "7.0.0" }

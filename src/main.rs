@@ -1,4 +1,5 @@
 mod app;
+mod browser;
 mod config;
 mod events;
 mod ui;
@@ -58,7 +59,7 @@ fn csv_options(delimiter: u8) -> CsvReadOptions {
         .with_parse_options(CsvParseOptions::default().with_separator(delimiter))
 }
 
-fn parse_buf(buf: Vec<u8>, delimiter: Option<u8>) -> Result<DataFrame, Box<dyn std::error::Error>> {
+pub(crate) fn parse_buf(buf: Vec<u8>, delimiter: Option<u8>) -> Result<DataFrame, Box<dyn std::error::Error>> {
     let df = match detect_format(&buf) {
         StdinFormat::Json => JsonReader::new(std::io::Cursor::new(buf))
             .with_json_format(JsonFormat::Json)
@@ -71,7 +72,7 @@ fn parse_buf(buf: Vec<u8>, delimiter: Option<u8>) -> Result<DataFrame, Box<dyn s
     Ok(try_parse_date_columns(df))
 }
 
-fn load_dataframe(
+pub(crate) fn load_dataframe(
     file_path: &str,
     delimiter: Option<u8>,
 ) -> Result<DataFrame, Box<dyn std::error::Error>> {
