@@ -24,11 +24,7 @@ pub enum Focus {
 }
 
 impl BrowserApp {
-    pub fn new(
-        backend: Box<dyn FileBrowser>,
-        root_path: String,
-        theme: &'static Theme,
-    ) -> Self {
+    pub fn new(backend: Box<dyn FileBrowser>, root_path: String, theme: &'static Theme) -> Self {
         let (entries, status) = match backend.list(&root_path) {
             Ok(e) => (e, None),
             Err(e) => (Vec::new(), Some(e.to_string())),

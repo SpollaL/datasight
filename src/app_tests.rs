@@ -1024,7 +1024,11 @@ mod unique_values_tests {
             .unwrap()
             .finish()
             .unwrap();
-        let mut app = App::new(df, "orders_nulls.csv".to_string(), crate::theme::default_theme());
+        let mut app = App::new(
+            df,
+            "orders_nulls.csv".to_string(),
+            crate::theme::default_theme(),
+        );
         // customer_name is col index 3
         app.state.select_column(Some(3));
         app.build_unique_values();

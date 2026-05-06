@@ -38,10 +38,7 @@ pub fn run_browser_app(
                                 if let Err(e) =
                                     crate::theme::write_state_theme_at(&path, app.theme.name)
                                 {
-                                    eprintln!(
-                                        "warning: could not save theme to {:?}: {}",
-                                        path, e
-                                    );
+                                    eprintln!("warning: could not save theme to {:?}: {}", path, e);
                                 }
                             }
                             app.picker = None;

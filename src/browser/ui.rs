@@ -30,12 +30,7 @@ pub fn browser_ui(frame: &mut Frame, app: &mut BrowserApp) {
     }
 }
 
-fn render_browser_pane(
-    frame: &mut Frame,
-    app: &BrowserApp,
-    area: Rect,
-    theme: &Theme,
-) {
+fn render_browser_pane(frame: &mut Frame, app: &BrowserApp, area: Rect, theme: &Theme) {
     let is_focused = app.focus == Focus::Browser;
     let border_style = if is_focused {
         Style::default().fg(theme.accent)
@@ -91,12 +86,7 @@ fn render_browser_pane(
     frame.render_stateful_widget(list, list_area, &mut list_state);
 }
 
-fn render_viewer_pane(
-    frame: &mut Frame,
-    app: &mut BrowserApp,
-    area: Rect,
-    theme: &Theme,
-) {
+fn render_viewer_pane(frame: &mut Frame, app: &mut BrowserApp, area: Rect, theme: &Theme) {
     if let Some(ref mut viewer) = app.viewer {
         ui(frame, viewer, area);
     } else {
@@ -267,7 +257,8 @@ mod tests {
     fn test_shortcut_bar_browser_focused_with_viewer_no_quit() {
         use polars::prelude::*;
         let df = df!("col" => &[1i64]).unwrap();
-        let viewer = crate::app::App::new(df, "test.csv".to_string(), crate::theme::default_theme());
+        let viewer =
+            crate::app::App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         let mut app = make_app();
         app.viewer = Some(viewer);
         let text = bar_text(&app);

@@ -97,11 +97,8 @@ pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
     let vis_cols: Vec<usize> = (app.viewport.col..total_cols).take(vis_count).collect();
 
     let header_cells = Row::new(vis_cols.iter().map(|&i| {
-        Cell::from(app.header_label(i)).style(
-            Style::default()
-                .fg(theme.info)
-                .add_modifier(Modifier::BOLD),
-        )
+        Cell::from(app.header_label(i))
+            .style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD))
     }))
     .style(Style::default().bg(theme.bg_alt));
 
@@ -151,7 +148,11 @@ pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
         .block(
             Block::default()
                 .title(format!(" {} ", app.file_path))
-                .title_style(Style::default().fg(theme.accent).add_modifier(Modifier::BOLD))
+                .title_style(
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD),
+                )
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(theme.border_idle))
@@ -261,11 +262,7 @@ fn render_help_popup(frame: &mut Frame, app: &mut App, theme: &Theme) {
         .block(
             Block::default()
                 .title(" Help — j/k to scroll · ? or Esc to close ")
-                .title_style(
-                    Style::default()
-                        .fg(theme.info)
-                        .add_modifier(Modifier::BOLD),
-                )
+                .title_style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(theme.info)),
@@ -519,8 +516,14 @@ fn get_bar(app: &App, theme: &Theme) -> (String, Style) {
         // render_plot() returns early in ui() and renders its own status bar.
         Mode::Plot => unreachable!("get_bar is not called in Plot mode"),
         Mode::ThemePicker => (
-            format!(" Theme: {}  |  j/k navigate  |  Enter keep  |  Esc cancel ", app.theme.name),
-            Style::default().bg(theme.accent).fg(theme.bg).add_modifier(Modifier::BOLD),
+            format!(
+                " Theme: {}  |  j/k navigate  |  Enter keep  |  Esc cancel ",
+                app.theme.name
+            ),
+            Style::default()
+                .bg(theme.accent)
+                .fg(theme.bg)
+                .add_modifier(Modifier::BOLD),
         ),
         Mode::UniqueValues => (
             {
@@ -731,9 +734,7 @@ fn help_text(theme: &Theme) -> Text<'static> {
             Span::raw(" "),
             Span::styled(
                 title,
-                Style::default()
-                    .fg(theme.info)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.info).add_modifier(Modifier::BOLD),
             ),
         ])
     };
@@ -854,16 +855,8 @@ fn render_unique_values_popup(frame: &mut Frame, app: &mut App, theme: &Theme) {
 
     // Values table
     let header = Row::new([
-        Cell::from("Value").style(
-            Style::default()
-                .fg(theme.info)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Count").style(
-            Style::default()
-                .fg(theme.info)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Cell::from("Value").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
+        Cell::from("Count").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
     ])
     .style(Style::default().bg(theme.bg_alt))
     .bottom_margin(1);
@@ -930,51 +923,15 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, theme: &Theme) {
     frame.render_widget(Paragraph::new(bar_text).style(bar_style), chunks[2]);
 
     let header = Row::new([
-        Cell::from("Column").style(
-            Style::default()
-                .fg(theme.info)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Type").style(
-            Style::default()
-                .fg(theme.info)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Count").style(
-            Style::default()
-                .fg(theme.info)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Nulls").style(
-            Style::default()
-                .fg(theme.info)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Unique").style(
-            Style::default()
-                .fg(theme.info)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Min").style(
-            Style::default()
-                .fg(theme.info)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Max").style(
-            Style::default()
-                .fg(theme.info)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Mean").style(
-            Style::default()
-                .fg(theme.info)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Cell::from("Median").style(
-            Style::default()
-                .fg(theme.info)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Cell::from("Column").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
+        Cell::from("Type").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
+        Cell::from("Count").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
+        Cell::from("Nulls").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
+        Cell::from("Unique").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
+        Cell::from("Min").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
+        Cell::from("Max").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
+        Cell::from("Mean").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
+        Cell::from("Median").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
     ])
     .style(Style::default().bg(theme.bg_alt))
     .bottom_margin(1);
@@ -1016,7 +973,11 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, theme: &Theme) {
         .block(
             Block::default()
                 .title(title)
-                .title_style(Style::default().fg(theme.success).add_modifier(Modifier::BOLD))
+                .title_style(
+                    Style::default()
+                        .fg(theme.success)
+                        .add_modifier(Modifier::BOLD),
+                )
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(theme.border_idle))
@@ -1111,13 +1072,7 @@ fn compute_histogram(app: &App, y_idx: usize) -> Result<Vec<(f64, f64)>, String>
         .collect())
 }
 
-fn render_histogram(
-    frame: &mut Frame,
-    app: &App,
-    theme: &Theme,
-    y_idx: usize,
-    full_area: Rect,
-) {
+fn render_histogram(frame: &mut Frame, app: &App, theme: &Theme, y_idx: usize, full_area: Rect) {
     let zones = Layout::default()
         .direction(ratatui::layout::Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
@@ -1139,7 +1094,11 @@ fn render_histogram(
                 .block(
                     Block::default()
                         .title(" Plot Error ")
-                        .title_style(Style::default().fg(theme.error).add_modifier(Modifier::BOLD))
+                        .title_style(
+                            Style::default()
+                                .fg(theme.error)
+                                .add_modifier(Modifier::BOLD),
+                        )
                         .borders(Borders::ALL)
                         .border_type(BorderType::Rounded)
                         .border_style(Style::default().fg(theme.error)),
@@ -1289,7 +1248,11 @@ fn render_plot(frame: &mut Frame, app: &App, theme: &Theme) {
             .block(
                 Block::default()
                     .title(" Plot Error ")
-                    .title_style(Style::default().fg(theme.error).add_modifier(Modifier::BOLD))
+                    .title_style(
+                        Style::default()
+                            .fg(theme.error)
+                            .add_modifier(Modifier::BOLD),
+                    )
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(theme.error)),
@@ -1404,12 +1367,7 @@ fn render_plot(frame: &mut Frame, app: &App, theme: &Theme) {
     }
 }
 
-fn render_plot_legend(
-    frame: &mut Frame,
-    app: &App,
-    theme: &Theme,
-    chart_area: Rect,
-) {
+fn render_plot_legend(frame: &mut Frame, app: &App, theme: &Theme, chart_area: Rect) {
     let legend_inner_w = app
         .plot
         .y_cols
@@ -1775,7 +1733,11 @@ mod histogram_tests {
             .cast(&DataType::Decimal(Some(10), Some(2)))
             .unwrap();
         let df = DataFrame::new(vec![s.into()]).unwrap();
-        let app = App::new(df, "test.parquet".to_string(), crate::theme::default_theme());
+        let app = App::new(
+            df,
+            "test.parquet".to_string(),
+            crate::theme::default_theme(),
+        );
         let result = compute_histogram_pub(&app, 0);
         assert!(
             result.is_ok(),
