@@ -310,17 +310,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "catppuccin"
-version = "2.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa1798ea21d5f88f057b9a4d075bbf3e9cc4bba98da0d6197a2019f61f633bf4"
-dependencies = [
- "itertools 0.13.0",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "cc"
 version = "1.2.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -614,7 +603,6 @@ dependencies = [
 name = "datasight"
 version = "0.5.0"
 dependencies = [
- "catppuccin",
  "clap",
  "crossterm",
  "dirs",
