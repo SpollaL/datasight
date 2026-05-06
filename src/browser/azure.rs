@@ -34,6 +34,7 @@ impl AzureBackend {
 
 /// Parse an Azure connection string (`Key=Value;...`) into a builder.
 /// Values may contain `=` (e.g. base64 account keys), so we split on the first `=` only.
+/// For HTTP BlobEndpoint (Azurite / emulator), HTTP is explicitly allowed.
 fn builder_from_connection_string(conn_str: &str) -> MicrosoftAzureBuilder {
     let parts: std::collections::HashMap<String, String> = conn_str
         .split(';')
@@ -51,7 +52,10 @@ fn builder_from_connection_string(conn_str: &str) -> MicrosoftAzureBuilder {
         b = b.with_access_key(key);
     }
     if let Some(endpoint) = parts.get("blobendpoint") {
-        b = b.with_endpoint(endpoint.clone());
+        let allow_http = endpoint.starts_with("http://");
+        b = b
+            .with_endpoint(endpoint.clone())
+            .with_allow_http(allow_http);
     }
     b
 }
