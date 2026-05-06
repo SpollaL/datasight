@@ -109,15 +109,21 @@ fn render_viewer_pane(
 
 /// Truncate a path from the left so it fits within `max_chars`, prefixing with `…`.
 fn truncate_path_left(path: &str, max_chars: usize) -> String {
-    if path.len() <= max_chars {
+    let char_count = path.chars().count();
+    if char_count <= max_chars {
         return path.to_string();
     }
     if max_chars < 2 {
         return "…".to_string();
     }
-    let keep = max_chars - 1; // 1 char for `…`
-    let start = path.len() - keep;
-    format!("…{}", &path[start..])
+    let keep = max_chars - 1;
+    let start_char = char_count - keep;
+    let start_byte = path
+        .char_indices()
+        .nth(start_char)
+        .map(|(i, _)| i)
+        .unwrap_or(path.len());
+    format!("…{}", &path[start_byte..])
 }
 
 #[cfg(test)]
@@ -139,5 +145,12 @@ mod tests {
     #[test]
     fn test_truncate_path_left_exact_fit() {
         assert_eq!(truncate_path_left("abc", 3), "abc");
+    }
+
+    #[test]
+    fn test_truncate_path_left_multibyte() {
+        let result = truncate_path_left("/héllo.csv", 8);
+        assert!(result.starts_with('…'));
+        assert!(result.chars().count() <= 8);
     }
 }
