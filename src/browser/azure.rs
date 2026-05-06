@@ -15,7 +15,12 @@ impl AzureBackend {
     pub fn new(rest: &str) -> Result<Self, String> {
         let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
         let (container, _) = rest.split_once('/').unwrap_or((rest, ""));
-        let store = MicrosoftAzureBuilder::from_env()
+        let base = if let Ok(conn_str) = std::env::var("AZURE_STORAGE_CONNECTION_STRING") {
+            builder_from_connection_string(&conn_str)
+        } else {
+            MicrosoftAzureBuilder::from_env()
+        };
+        let store = base
             .with_container_name(container)
             .build()
             .map_err(|e| format!("Azure: {}", e))?;
@@ -25,6 +30,30 @@ impl AzureBackend {
             rt,
         })
     }
+}
+
+/// Parse an Azure connection string (`Key=Value;...`) into a builder.
+/// Values may contain `=` (e.g. base64 account keys), so we split on the first `=` only.
+fn builder_from_connection_string(conn_str: &str) -> MicrosoftAzureBuilder {
+    let parts: std::collections::HashMap<String, String> = conn_str
+        .split(';')
+        .filter_map(|seg| {
+            let pos = seg.find('=')?;
+            Some((seg[..pos].to_lowercase(), seg[pos + 1..].to_string()))
+        })
+        .collect();
+
+    let mut b = MicrosoftAzureBuilder::new();
+    if let Some(name) = parts.get("accountname") {
+        b = b.with_account(name);
+    }
+    if let Some(key) = parts.get("accountkey") {
+        b = b.with_access_key(key);
+    }
+    if let Some(endpoint) = parts.get("blobendpoint") {
+        b = b.with_endpoint(endpoint.clone());
+    }
+    b
 }
 
 impl FileBrowser for AzureBackend {
