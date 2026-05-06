@@ -1,4 +1,5 @@
 use ratatui::style::Color;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 pub struct Base16Scheme {
@@ -303,6 +304,33 @@ pub fn theme_names_csv() -> String {
         .join(", ")
 }
 
+#[derive(serde::Deserialize, serde::Serialize)]
+struct StateFile {
+    theme: String,
+}
+
+pub fn state_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|p| p.join("datasight").join("state.toml"))
+}
+
+pub fn read_state_theme_at(path: &Path) -> Option<String> {
+    let contents = std::fs::read_to_string(path).ok()?;
+    let parsed: StateFile = toml::from_str(&contents).ok()?;
+    Some(parsed.theme)
+}
+
+pub fn write_state_theme_at(path: &Path, name: &str) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let state = StateFile {
+        theme: name.to_string(),
+    };
+    let s = toml::to_string(&state)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    std::fs::write(path, s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,5 +416,37 @@ mod tests {
     #[test]
     fn default_theme_is_mocha() {
         assert_eq!(default_theme().name, "mocha");
+    }
+
+    #[test]
+    fn read_state_returns_none_for_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.toml");
+        assert!(read_state_theme_at(&path).is_none());
+    }
+
+    #[test]
+    fn read_state_returns_none_for_malformed_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.toml");
+        std::fs::write(&path, "this is not valid toml ::: !!!").unwrap();
+        assert!(read_state_theme_at(&path).is_none());
+    }
+
+    #[test]
+    fn write_then_read_state_roundtrips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.toml");
+        write_state_theme_at(&path, "nord").unwrap();
+        assert_eq!(read_state_theme_at(&path).as_deref(), Some("nord"));
+    }
+
+    #[test]
+    fn write_state_creates_parent_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested").join("dir").join("state.toml");
+        write_state_theme_at(&path, "dracula").unwrap();
+        assert!(path.exists());
+        assert_eq!(read_state_theme_at(&path).as_deref(), Some("dracula"));
     }
 }
