@@ -3,6 +3,7 @@ mod browser;
 mod config;
 mod events;
 mod theme;
+mod theme_picker;
 mod ui;
 
 use app::App;
