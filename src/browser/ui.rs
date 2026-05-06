@@ -24,6 +24,10 @@ pub fn browser_ui(frame: &mut Frame, app: &mut BrowserApp) {
     }
 
     frame.render_widget(Paragraph::new(browser_shortcut_bar(app, theme)), bar_area);
+
+    if let Some(ref picker) = app.picker {
+        crate::theme_picker::render_picker(frame, frame.area(), picker, app.theme);
+    }
 }
 
 fn render_browser_pane(

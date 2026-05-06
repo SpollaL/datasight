@@ -1,6 +1,7 @@
 use crate::app::App;
 use crate::browser::{Entry, FileBrowser};
 use crate::theme::Theme;
+use crate::theme_picker::ThemePicker;
 
 pub struct BrowserApp {
     pub backend: Box<dyn FileBrowser>,
@@ -13,6 +14,7 @@ pub struct BrowserApp {
     pub status: Option<String>,
     pub should_quit: bool,
     pub theme: &'static Theme,
+    pub picker: Option<ThemePicker>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -42,6 +44,7 @@ impl BrowserApp {
             status,
             should_quit: false,
             theme,
+            picker: None,
         }
     }
 
