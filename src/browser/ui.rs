@@ -3,7 +3,7 @@ use crate::ui::ui;
 use catppuccin::PALETTE;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
@@ -14,15 +14,20 @@ fn c(color: catppuccin::Color) -> Color {
 pub fn browser_ui(frame: &mut Frame, app: &mut BrowserApp) {
     let m = &PALETTE.mocha.colors;
 
+    let [content_area, bar_area] =
+        Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(frame.area());
+
     if app.browser_visible {
         let [browser_area, viewer_area] =
             Layout::horizontal([Constraint::Percentage(30), Constraint::Percentage(70)])
-                .areas(frame.area());
+                .areas(content_area);
         render_browser_pane(frame, app, browser_area, m);
         render_viewer_pane(frame, app, viewer_area, m);
     } else {
-        render_viewer_pane(frame, app, frame.area(), m);
+        render_viewer_pane(frame, app, content_area, m);
     }
+
+    frame.render_widget(Paragraph::new(browser_shortcut_bar(app, m)), bar_area);
 }
 
 fn render_browser_pane(
@@ -107,6 +112,49 @@ fn render_viewer_pane(
     }
 }
 
+fn browser_shortcut_bar<'a>(app: &BrowserApp, m: &catppuccin::FlavorColors) -> Line<'a> {
+    type Shortcuts = &'static [(&'static str, &'static str)];
+
+    let keys: Shortcuts = if !app.browser_visible {
+        &[("ctrl-e", "Show browser")]
+    } else if app.focus == Focus::Viewer {
+        &[("ctrl-h", "Browser"), ("ctrl-e", "Hide")]
+    } else if app.viewer.is_none() {
+        &[
+            ("j / k", "Navigate"),
+            ("Enter", "Open"),
+            ("h", "Up"),
+            ("ctrl-e", "Hide"),
+            ("ctrl-l", "Viewer"),
+            ("q", "Quit"),
+        ]
+    } else {
+        &[
+            ("j / k", "Navigate"),
+            ("Enter", "Open"),
+            ("h", "Up"),
+            ("ctrl-e", "Hide"),
+            ("ctrl-l", "Viewer"),
+        ]
+    };
+
+    let key_style = Style::default()
+        .bg(c(m.blue))
+        .fg(c(m.base))
+        .add_modifier(Modifier::BOLD);
+    let label_style = Style::default().bg(c(m.mantle)).fg(c(m.subtext0));
+    let gap_style = Style::default().bg(c(m.mantle));
+
+    let mut spans = Vec::new();
+    for (key, action) in keys {
+        spans.push(Span::styled(format!(" {} ", key), key_style));
+        spans.push(Span::styled(format!(" {} ", action), label_style));
+        spans.push(Span::styled("  ", gap_style));
+    }
+
+    Line::from(spans).style(Style::default().bg(c(m.mantle)))
+}
+
 /// Truncate a path from the left so it fits within `max_chars`, prefixing with `…`.
 fn truncate_path_left(path: &str, max_chars: usize) -> String {
     let char_count = path.chars().count();
@@ -129,6 +177,9 @@ fn truncate_path_left(path: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::browser::{BrowserError, Entry, FileBrowser};
+
+    // ── truncate tests ────────────────────────────────────────────────────────
 
     #[test]
     fn test_truncate_path_left_short_path() {
@@ -152,5 +203,76 @@ mod tests {
         let result = truncate_path_left("/héllo.csv", 8);
         assert!(result.starts_with('…'));
         assert!(result.chars().count() <= 8);
+    }
+
+    // ── shortcut bar tests ────────────────────────────────────────────────────
+
+    struct StubBackend;
+    impl FileBrowser for StubBackend {
+        fn list(&self, _: &str) -> Result<Vec<Entry>, BrowserError> {
+            Ok(vec![])
+        }
+    }
+
+    fn make_app() -> crate::browser::app::BrowserApp {
+        crate::browser::app::BrowserApp::new(Box::new(StubBackend), "/test".to_string())
+    }
+
+    fn bar_text(app: &crate::browser::app::BrowserApp) -> String {
+        let m = &catppuccin::PALETTE.mocha.colors;
+        let line = browser_shortcut_bar(app, m);
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn test_shortcut_bar_browser_hidden() {
+        let mut app = make_app();
+        app.browser_visible = false;
+        let text = bar_text(&app);
+        assert!(text.contains("ctrl-e"), "expected ctrl-e in: {}", text);
+        assert!(
+            text.contains("Show browser"),
+            "expected 'Show browser' in: {}",
+            text
+        );
+    }
+
+    #[test]
+    fn test_shortcut_bar_viewer_focused() {
+        let mut app = make_app();
+        app.focus = crate::browser::app::Focus::Viewer;
+        let text = bar_text(&app);
+        assert!(text.contains("ctrl-h"), "expected ctrl-h in: {}", text);
+        assert!(text.contains("Browser"), "expected 'Browser' in: {}", text);
+    }
+
+    #[test]
+    fn test_shortcut_bar_browser_focused_no_viewer_shows_quit() {
+        let app = make_app();
+        let text = bar_text(&app);
+        assert!(text.contains("j / k"), "expected 'j / k' in: {}", text);
+        assert!(
+            text.contains("Navigate"),
+            "expected 'Navigate' in: {}",
+            text
+        );
+        assert!(text.contains("q"), "expected 'q' in: {}", text);
+        assert!(text.contains("Quit"), "expected 'Quit' in: {}", text);
+    }
+
+    #[test]
+    fn test_shortcut_bar_browser_focused_with_viewer_no_quit() {
+        use polars::prelude::*;
+        let df = df!("col" => &[1i64]).unwrap();
+        let viewer = crate::app::App::new(df, "test.csv".to_string());
+        let mut app = make_app();
+        app.viewer = Some(viewer);
+        let text = bar_text(&app);
+        assert!(text.contains("j / k"), "expected 'j / k' in: {}", text);
+        assert!(
+            !text.contains("Quit"),
+            "expected no 'Quit' when viewer loaded, got: {}",
+            text
+        );
     }
 }
