@@ -374,7 +374,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
                 ("← →", "Navigate"),
                 ("Space", "Toggle Y"),
                 ("Enter", "Pick X axis"),
-                ("i", "Plot now (row index as X)"),
+                ("i", "Plot with index"),
                 ("Esc", "Cancel"),
             ],
             &[],
@@ -485,7 +485,7 @@ fn get_bar(app: &App, theme: &Theme) -> (String, Style) {
             };
             (
                 format!(
-                    " Y: [{}]  —  Space toggle · ←/→ navigate · Enter pick X · Esc cancel ",
+                    " Y: [{}]  —  Space toggle · ←/→ navigate · i plot with index · Enter pick X · Esc cancel ",
                     y_names
                 ),
                 Style::default()
