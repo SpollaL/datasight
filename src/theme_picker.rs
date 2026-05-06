@@ -1,6 +1,3 @@
-// dead_code lifted in Task 11, when the picker is wired into App's keymap.
-#![allow(dead_code)]
-
 use crate::theme::{default_theme, list_themes, theme_by_name, Theme};
 
 pub struct ThemePicker {

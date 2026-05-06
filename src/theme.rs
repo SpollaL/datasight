@@ -11,8 +11,7 @@ pub struct Base16Scheme {
 #[derive(Debug)]
 pub struct Theme {
     pub name: &'static str,
-    /// Human-friendly name shown in the in-app theme picker (Task 10).
-    #[allow(dead_code)]
+    /// Human-friendly name shown in the in-app theme picker.
     pub display_name: &'static str,
     pub bg: Color,
     pub bg_alt: Color,
@@ -322,8 +321,7 @@ pub fn read_state_theme_at(path: &Path) -> Option<String> {
     Some(parsed.theme)
 }
 
-/// Persist the chosen theme name to `state.toml`. Wired in by the in-app picker (Task 11).
-#[allow(dead_code)]
+/// Persist the chosen theme name to `state.toml`.
 pub fn write_state_theme_at(path: &Path, name: &str) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

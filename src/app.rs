@@ -12,6 +12,7 @@
 
 use crate::config;
 use crate::theme::Theme;
+use crate::theme_picker::ThemePicker;
 use polars::prelude::*;
 use ratatui::widgets::TableState;
 use std::collections::{HashMap, HashSet};
@@ -28,7 +29,7 @@ pub struct ColumnProfile {
     pub median: Option<f64>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Mode {
     Search,
     Normal,
@@ -38,6 +39,7 @@ pub enum Mode {
     Plot,
     ColumnsView,
     UniqueValues,
+    ThemePicker,
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -164,6 +166,7 @@ pub struct App {
     pub columns_view: ColumnsViewState,
     pub viewport: ViewportState,
     pub theme: &'static Theme,
+    pub picker: Option<ThemePicker>,
 }
 
 /// Strips a leading comparison operator from `query`.
@@ -349,6 +352,7 @@ impl App {
             columns_view: ColumnsViewState::default(),
             viewport: ViewportState::default(),
             theme,
+            picker: None,
         };
         if !app.df.is_empty() {
             app.state.select(Some(0));

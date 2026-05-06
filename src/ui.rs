@@ -188,6 +188,12 @@ pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
     if matches!(app.mode, Mode::UniqueValues) {
         render_unique_values_popup(frame, app, theme);
     }
+
+    if app.mode == Mode::ThemePicker {
+        if let Some(ref picker) = app.picker {
+            crate::theme_picker::render_picker(frame, area, picker, app.theme);
+        }
+    }
 }
 
 /// Returns the number of columns that fit within `available_w` terminal cells
@@ -382,6 +388,10 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
         ),
         // render_plot() returns early in ui() and renders its own status bar.
         Mode::Plot => unreachable!("shortcut_bar is not called in Plot mode"),
+        Mode::ThemePicker => (
+            &[("j / k", "Navigate"), ("Enter", "Keep"), ("Esc", "Cancel")],
+            &[],
+        ),
         Mode::ColumnsView => {
             if app.columns_view.searching {
                 (
@@ -508,6 +518,10 @@ fn get_bar(app: &App, theme: &Theme) -> (String, Style) {
         }
         // render_plot() returns early in ui() and renders its own status bar.
         Mode::Plot => unreachable!("get_bar is not called in Plot mode"),
+        Mode::ThemePicker => (
+            format!(" Theme: {}  |  j/k navigate  |  Enter keep  |  Esc cancel ", app.theme.name),
+            Style::default().bg(theme.accent).fg(theme.bg).add_modifier(Modifier::BOLD),
+        ),
         Mode::UniqueValues => (
             {
                 let col = app
