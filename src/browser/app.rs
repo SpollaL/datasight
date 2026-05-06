@@ -117,6 +117,14 @@ mod tests {
         }
     }
 
+    struct ErrorBackend;
+
+    impl FileBrowser for ErrorBackend {
+        fn list(&self, _prefix: &str) -> Result<Vec<Entry>, BrowserError> {
+            Err(BrowserError::NotFound("not found".to_string()))
+        }
+    }
+
     fn make_app(entries: Vec<Entry>) -> BrowserApp {
         BrowserApp::new(
             Box::new(StubBackend { entries }),
@@ -211,5 +219,50 @@ mod tests {
         let old_cwd = app.cwd.clone();
         app.descend();
         assert_eq!(app.cwd, old_cwd);
+    }
+
+    #[test]
+    fn test_ascend_moves_to_parent() {
+        let mut app = BrowserApp::new(
+            Box::new(StubBackend { entries: vec![] }),
+            "/test/root/child".to_string(),
+        );
+        app.ascend();
+        assert_eq!(app.cwd, "/test/root");
+    }
+
+    #[test]
+    fn test_ascend_no_op_at_local_root() {
+        let mut app = BrowserApp::new(
+            Box::new(StubBackend { entries: vec![] }),
+            "/".to_string(),
+        );
+        app.ascend();
+        assert_eq!(app.cwd, "/");
+    }
+
+    #[test]
+    fn test_new_sets_status_on_list_error() {
+        let app = BrowserApp::new(
+            Box::new(ErrorBackend),
+            "/nonexistent".to_string(),
+        );
+        assert!(app.status.is_some(), "status should be set on list error");
+        assert!(app.entries.is_empty(), "entries should be empty on error");
+    }
+
+    #[test]
+    fn test_parent_path_s3_nested() {
+        assert_eq!(parent_path("s3://bucket/a/b/"), "s3://bucket/a/");
+    }
+
+    #[test]
+    fn test_parent_path_s3_one_level() {
+        assert_eq!(parent_path("s3://bucket/a/"), "s3://bucket/");
+    }
+
+    #[test]
+    fn test_parent_path_s3_root_no_op() {
+        assert_eq!(parent_path("s3://bucket/"), "s3://bucket/");
     }
 }
