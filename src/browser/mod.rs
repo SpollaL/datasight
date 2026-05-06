@@ -53,6 +53,8 @@ impl fmt::Display for BrowserError {
     }
 }
 
+impl std::error::Error for BrowserError {}
+
 pub const SUPPORTED_EXTENSIONS: &[&str] = &["csv", "tsv", "parquet", "json", "ndjson", "jsonl"];
 
 pub fn is_supported(name: &str) -> bool {
@@ -90,7 +92,7 @@ pub fn build_backend(path: &str) -> Result<(Box<dyn FileBrowser>, String), Strin
     // Local path — canonicalize to an absolute path.
     let canonical = std::fs::canonicalize(path)
         .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| path.to_string());
+        .map_err(|e| format!("cannot access '{}': {}", path, e))?;
     Ok((Box::new(local::LocalBackend), canonical))
 }
 
@@ -163,6 +165,8 @@ mod tests {
     fn test_build_backend_local_bare_path() {
         let result = build_backend("tests/fixtures");
         assert!(result.is_ok());
+        let (_, resolved) = result.unwrap();
+        assert!(std::path::Path::new(&resolved).is_absolute(), "resolved path should be absolute");
     }
 
     #[test]
