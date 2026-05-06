@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-05-06
+
+### Added
+- `datasight browse` subcommand — file browser TUI with split-pane navigation and live preview. Supports local filesystem, Azure Blob Storage (behind `--features azure`), and S3 (behind `--features aws`).
+- Base16 theme system — 9 built-in color schemes. Press `t` in normal mode to cycle themes, use `~/.config/datasight/state.toml` for persistence.
+
+### Fixed
+- CSV schema inference now correctly promoted to Decimal dtype for columns with decimal values.
+- Full CSV schema inference fixed to avoid treating free-text columns as dates.
+
 ## [0.5.0] - 2026-04-23
 
 ### Added
