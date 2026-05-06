@@ -8,6 +8,7 @@ pub struct Base16Scheme {
     pub base: [[u8; 3]; 16],
 }
 
+#[derive(Debug)]
 pub struct Theme {
     pub name: &'static str,
     pub display_name: &'static str,
@@ -331,6 +332,27 @@ pub fn write_state_theme_at(path: &Path, name: &str) -> std::io::Result<()> {
     std::fs::write(path, s)
 }
 
+pub fn resolve_theme(
+    cli: Option<&str>,
+    env: Option<String>,
+    state: Option<String>,
+) -> Result<&'static Theme, String> {
+    if let Some(name) = cli {
+        return theme_by_name(name)
+            .ok_or_else(|| format!("unknown theme: {} (try: {})", name, theme_names_csv()));
+    }
+    if let Some(name) = env {
+        return theme_by_name(&name)
+            .ok_or_else(|| format!("unknown theme: {} (try: {})", name, theme_names_csv()));
+    }
+    if let Some(name) = state {
+        if let Some(t) = theme_by_name(&name) {
+            return Ok(t);
+        }
+    }
+    Ok(default_theme())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,5 +470,59 @@ mod tests {
         write_state_theme_at(&path, "dracula").unwrap();
         assert!(path.exists());
         assert_eq!(read_state_theme_at(&path).as_deref(), Some("dracula"));
+    }
+
+    #[test]
+    fn resolve_uses_cli_arg_when_provided() {
+        let result = resolve_theme(Some("nord"), Some("dracula".into()), Some("latte".into()));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().name, "nord");
+    }
+
+    #[test]
+    fn resolve_falls_back_to_env_when_no_cli() {
+        let result = resolve_theme(None, Some("dracula".into()), Some("latte".into()));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().name, "dracula");
+    }
+
+    #[test]
+    fn resolve_falls_back_to_state_when_no_cli_or_env() {
+        let result = resolve_theme(None, None, Some("latte".into()));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().name, "latte");
+    }
+
+    #[test]
+    fn resolve_falls_back_to_default_when_nothing_provided() {
+        let result = resolve_theme(None, None, None);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().name, "mocha");
+    }
+
+    #[test]
+    fn resolve_unknown_cli_returns_error() {
+        let result = resolve_theme(Some("nonsense"), None, None);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("unknown theme: nonsense"));
+        assert!(
+            err.contains("mocha"),
+            "error should list valid themes, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn resolve_unknown_env_returns_error() {
+        let result = resolve_theme(None, Some("nonsense".into()), None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_unknown_state_falls_back_to_default() {
+        let result = resolve_theme(None, None, Some("stale-name".into()));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().name, "mocha");
     }
 }
