@@ -555,11 +555,12 @@ assert_contains "X5/browser-focused" "wide.csv"
 send "q" 0.20
 
 # X6: browse with no path arg opens current dir
-pushd tests/fixtures > /dev/null
+REPO_ROOT=$(git rev-parse --show-toplevel)
+tmux send-keys -t "$APP_PANE" "cd $REPO_ROOT/tests/fixtures" Enter; sleep 0.3
 start_app "browse"
 assert_contains "X6/browse-cwd-default" "orders.csv"
 send "q" 0.20
-popd > /dev/null
+tmux send-keys -t "$APP_PANE" "cd $REPO_ROOT" Enter; sleep 0.2
 
 # ── Summary ────────────────────────────────────────────────────────────────────
 echo ""
