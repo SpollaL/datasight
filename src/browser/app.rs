@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::browser::{BrowserError, Entry, FileBrowser};
+use crate::browser::{Entry, FileBrowser};
 
 pub struct BrowserApp {
     pub backend: Box<dyn FileBrowser>,

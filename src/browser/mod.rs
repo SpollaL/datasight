@@ -36,7 +36,9 @@ pub struct Entry {
 
 #[derive(Debug)]
 pub enum BrowserError {
+    #[allow(dead_code)]
     Auth(String),
+    #[allow(dead_code)]
     Network(String),
     NotFound(String),
     Other(String),
