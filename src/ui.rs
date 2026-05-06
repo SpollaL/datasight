@@ -37,7 +37,7 @@ fn format_cell<'a>(value: Option<&str>, m: &catppuccin::FlavorColors) -> Cell<'a
     }
 }
 
-pub fn ui(frame: &mut Frame, app: &mut App) {
+pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
     let m = &PALETTE.mocha.colors;
 
     if matches!(app.mode, Mode::Plot) {
@@ -57,7 +57,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
             Constraint::Length(1),
             Constraint::Length(1),
         ])
-        .split(frame.area());
+        .split(area);
 
     // 2 borders + 1 header row + 1 header bottom-margin = 4 rows of overhead.
     let page_h = (chunks[0].height.saturating_sub(4)) as usize;
@@ -1940,7 +1940,7 @@ mod null_render_tests {
 
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+        terminal.draw(|frame| ui(frame, &mut app, frame.area())).unwrap();
 
         let buffer = terminal.backend().buffer();
         let expected_fg = c(PALETTE.mocha.colors.overlay1);
@@ -1972,7 +1972,7 @@ mod null_render_tests {
 
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+        terminal.draw(|frame| ui(frame, &mut app, frame.area())).unwrap();
 
         let buffer = terminal.backend().buffer();
         let area = buffer.area;
@@ -1998,7 +1998,7 @@ mod null_render_tests {
 
         let backend = TestBackend::new(40, 10);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+        terminal.draw(|frame| ui(frame, &mut app, frame.area())).unwrap();
 
         let buffer = terminal.backend().buffer();
         let null_count = (0..buffer.area.height)
