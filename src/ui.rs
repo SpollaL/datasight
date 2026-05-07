@@ -1180,6 +1180,34 @@ fn render_histogram(frame: &mut Frame, app: &App, theme: &Theme, y_idx: usize, f
     frame.render_widget(chart, chart_area);
 }
 
+fn compute_x_bounds(app: &App, y_cols_all: &[usize], max_points: usize) -> [f64; 2] {
+    let x_min = y_cols_all
+        .iter()
+        .flat_map(|&y_idx| {
+            let (raw, _) = match app.plot.x_col {
+                Some(x_idx) => extract_plot_data(app, x_idx, y_idx),
+                None => (extract_plot_data_indexed(app, y_idx), false),
+            };
+            downsample(raw, max_points).into_iter().map(|p| p.0)
+        })
+        .fold(f64::INFINITY, f64::min);
+    let x_max = y_cols_all
+        .iter()
+        .flat_map(|&y_idx| {
+            let (raw, _) = match app.plot.x_col {
+                Some(x_idx) => extract_plot_data(app, x_idx, y_idx),
+                None => (extract_plot_data_indexed(app, y_idx), false),
+            };
+            downsample(raw, max_points).into_iter().map(|p| p.0)
+        })
+        .fold(f64::NEG_INFINITY, f64::max);
+    if x_min == f64::INFINITY || x_max == f64::NEG_INFINITY {
+        [0.0, 1.0]
+    } else {
+        [x_min, x_max]
+    }
+}
+
 fn render_plot(frame: &mut Frame, app: &App, theme: &Theme, full_area: Rect) {
     frame.render_widget(Clear, full_area);
 
@@ -1256,14 +1284,47 @@ fn render_plot(frame: &mut Frame, app: &App, theme: &Theme, full_area: Rect) {
     );
 
     if dual {
+        let all_y_cols: Vec<usize> = app
+            .plot
+            .y_cols
+            .iter()
+            .chain(app.plot.y2_cols.iter())
+            .copied()
+            .collect();
+        let x_bounds = compute_x_bounds(app, &all_y_cols, max_points);
         let panels = Layout::default()
             .direction(ratatui::layout::Direction::Vertical)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(chart_area);
-        render_plot_panel(frame, app, theme, &app.plot.y_cols, panels[0], max_points);
-        render_plot_panel(frame, app, theme, &app.plot.y2_cols, panels[1], max_points);
+        render_plot_panel(
+            frame,
+            app,
+            theme,
+            &app.plot.y_cols,
+            panels[0],
+            max_points,
+            x_bounds,
+        );
+        render_plot_panel(
+            frame,
+            app,
+            theme,
+            &app.plot.y2_cols,
+            panels[1],
+            max_points,
+            x_bounds,
+        );
     } else {
-        render_plot_panel(frame, app, theme, &app.plot.y_cols, chart_area, max_points);
+        let x_bounds = compute_x_bounds(app, &app.plot.y_cols, max_points);
+        render_plot_panel(
+            frame,
+            app,
+            theme,
+            &app.plot.y_cols,
+            chart_area,
+            max_points,
+            x_bounds,
+        );
         if !x_labels.is_empty() && label_area.height > 0 {
             // Compute y_label_width for rotated-label alignment (single-panel only).
             let all_series: Vec<(Vec<(f64, f64)>, bool)> = app
@@ -1317,6 +1378,7 @@ fn render_plot_panel(
     y_cols: &[usize],
     area: Rect,
     max_points: usize,
+    x_bounds: [f64; 2],
 ) {
     let all_series: Vec<(Vec<(f64, f64)>, bool)> = y_cols
         .iter()
@@ -1355,14 +1417,6 @@ fn render_plot_panel(
         return;
     }
 
-    let x_min = nonempty
-        .iter()
-        .flat_map(|(_, d)| d.iter().map(|p| p.0))
-        .fold(f64::INFINITY, f64::min);
-    let x_max = nonempty
-        .iter()
-        .flat_map(|(_, d)| d.iter().map(|p| p.0))
-        .fold(f64::NEG_INFINITY, f64::max);
     let y_min = nonempty
         .iter()
         .flat_map(|(_, d)| d.iter().map(|p| p.1))
@@ -1423,7 +1477,7 @@ fn render_plot_panel(
             Axis::default()
                 .title(x_header)
                 .style(Style::default().fg(theme.fg_dim))
-                .bounds([x_min, x_max]),
+                .bounds(x_bounds),
         )
         .y_axis(
             Axis::default()
