@@ -778,6 +778,68 @@ mod plot_tests {
     }
 }
 
+mod is_typing_tests {
+    use super::*;
+
+    fn make_app() -> App {
+        let df = df! { "a" => [1i32], "b" => [2i32] }.unwrap();
+        App::new(df, "test.csv".to_string(), crate::theme::default_theme())
+    }
+
+    #[test]
+    fn test_normal_mode_not_typing() {
+        let mut app = make_app();
+        app.mode = Mode::Normal;
+        assert!(!app.is_typing());
+    }
+
+    #[test]
+    fn test_search_mode_is_typing() {
+        let mut app = make_app();
+        app.mode = Mode::Search;
+        assert!(app.is_typing());
+    }
+
+    #[test]
+    fn test_filter_mode_is_typing() {
+        let mut app = make_app();
+        app.mode = Mode::Filter;
+        assert!(app.is_typing());
+    }
+
+    #[test]
+    fn test_columns_view_not_searching_not_typing() {
+        let mut app = make_app();
+        app.mode = Mode::ColumnsView;
+        app.columns_view.searching = false;
+        assert!(!app.is_typing());
+    }
+
+    #[test]
+    fn test_columns_view_searching_is_typing() {
+        let mut app = make_app();
+        app.mode = Mode::ColumnsView;
+        app.columns_view.searching = true;
+        assert!(app.is_typing());
+    }
+
+    #[test]
+    fn test_unique_values_not_searching_not_typing() {
+        let mut app = make_app();
+        app.mode = Mode::UniqueValues;
+        app.unique_values.searching = false;
+        assert!(!app.is_typing());
+    }
+
+    #[test]
+    fn test_unique_values_searching_is_typing() {
+        let mut app = make_app();
+        app.mode = Mode::UniqueValues;
+        app.unique_values.searching = true;
+        assert!(app.is_typing());
+    }
+}
+
 mod parse_operator_tests {
     use super::*;
 

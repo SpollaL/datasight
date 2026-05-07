@@ -940,6 +940,15 @@ impl App {
             });
     }
 
+    pub fn is_typing(&self) -> bool {
+        match self.mode {
+            Mode::Search | Mode::Filter => true,
+            Mode::ColumnsView => self.columns_view.searching,
+            Mode::UniqueValues => self.unique_values.searching,
+            _ => false,
+        }
+    }
+
     pub fn plot_type_label(&self) -> &str {
         match self.plot.plot_type {
             PlotType::Line => "Line",
