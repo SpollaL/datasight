@@ -164,14 +164,18 @@ pub(crate) fn dispatch_viewer_key(app: &mut App, key: &event::KeyEvent) {
             }
             event::KeyCode::Char('2') => {
                 if let Some(col) = app.state.selected_column() {
-                    // mutual exclusion: remove from y_cols if present
-                    if let Some(pos) = app.plot.y_cols.iter().position(|&c| c == col) {
-                        app.plot.y_cols.remove(pos);
-                    }
-                    if let Some(pos) = app.plot.y2_cols.iter().position(|&c| c == col) {
-                        app.plot.y2_cols.remove(pos);
-                    } else {
-                        app.plot.y2_cols.push(col);
+                    // refuse if this would leave y_cols empty
+                    let already_in_y1 = app.plot.y_cols.contains(&col);
+                    let would_drain_y1 = already_in_y1 && app.plot.y_cols.len() == 1;
+                    if !would_drain_y1 {
+                        if let Some(pos) = app.plot.y_cols.iter().position(|&c| c == col) {
+                            app.plot.y_cols.remove(pos);
+                        }
+                        if let Some(pos) = app.plot.y2_cols.iter().position(|&c| c == col) {
+                            app.plot.y2_cols.remove(pos);
+                        } else {
+                            app.plot.y2_cols.push(col);
+                        }
                     }
                 }
             }

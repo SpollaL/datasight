@@ -373,6 +373,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
             &[
                 ("← →", "Navigate"),
                 ("Space", "Toggle Y"),
+                ("2", "Toggle P2"),
                 ("Enter", "Pick X axis"),
                 ("i", "Plot with index"),
                 ("Esc", "Cancel"),
@@ -792,6 +793,7 @@ fn help_text(theme: &Theme) -> Text<'static> {
         key("p", "Mark column as Y, enter pick-Y mode"),
         key("←/→ h/l", "Navigate columns (pick-Y / pick-X)"),
         key("Space", "Toggle Y column (pick-Y)"),
+        key("2", "Toggle column into panel 2 (dual-panel mode)"),
         key("Enter", "pick-Y: advance to pick-X  |  pick-X: show chart"),
         key("i", "Plot against row index (skip pick-X)"),
         key(
@@ -1273,11 +1275,15 @@ fn render_plot(frame: &mut Frame, app: &App, theme: &Theme, full_area: Rect) {
     } else {
         "t cycle line/bar/histogram"
     };
+    let type_label = if dual && matches!(app.plot.plot_type, PlotType::Histogram) {
+        "Bar"
+    } else {
+        app.plot_type_label()
+    };
     frame.render_widget(
         Paragraph::new(format!(
             " {} chart  |  {}  |  Esc / p to close ",
-            app.plot_type_label(),
-            cycle_hint
+            type_label, cycle_hint
         ))
         .style(Style::default().bg(theme.bg_alt).fg(theme.fg_dim)),
         bar_area,
