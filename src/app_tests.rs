@@ -749,7 +749,10 @@ mod plot_tests {
         app.plot.y_cols = vec![1];
         toggle_y2_col(&mut app, 1);
         assert_eq!(app.plot.y2_cols, vec![1]);
-        assert!(app.plot.y_cols.is_empty(), "col should be removed from y_cols");
+        assert!(
+            app.plot.y_cols.is_empty(),
+            "col should be removed from y_cols"
+        );
     }
 
     #[test]
@@ -768,7 +771,10 @@ mod plot_tests {
         app.plot.y2_cols = vec![0];
         toggle_y_col(&mut app, 0);
         assert_eq!(app.plot.y_cols, vec![0]);
-        assert!(app.plot.y2_cols.is_empty(), "col should be removed from y2_cols");
+        assert!(
+            app.plot.y2_cols.is_empty(),
+            "col should be removed from y2_cols"
+        );
     }
 }
 
