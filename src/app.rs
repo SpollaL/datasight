@@ -112,7 +112,6 @@ pub struct GroupByState {
 #[derive(Default)]
 pub struct PlotState {
     pub y_cols: Vec<usize>,
-    #[allow(dead_code)]
     pub y2_cols: Vec<usize>,
     pub x_col: Option<usize>,
     pub plot_type: PlotType,

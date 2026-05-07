@@ -659,6 +659,10 @@ mod plot_tests {
     }
 
     fn toggle_y_col(app: &mut App, col: usize) {
+        // mutual exclusion: remove from y2_cols if present
+        if let Some(pos) = app.plot.y2_cols.iter().position(|&c| c == col) {
+            app.plot.y2_cols.remove(pos);
+        }
         if let Some(pos) = app.plot.y_cols.iter().position(|&c| c == col) {
             app.plot.y_cols.remove(pos);
         } else {
@@ -714,6 +718,57 @@ mod plot_tests {
     fn test_plot_state_default_y2_cols_empty() {
         let state = PlotState::default();
         assert!(state.y2_cols.is_empty());
+    }
+
+    fn toggle_y2_col(app: &mut App, col: usize) {
+        // mutual exclusion: remove from y_cols if present
+        if let Some(pos) = app.plot.y_cols.iter().position(|&c| c == col) {
+            app.plot.y_cols.remove(pos);
+        }
+        // toggle in y2_cols
+        if let Some(pos) = app.plot.y2_cols.iter().position(|&c| c == col) {
+            app.plot.y2_cols.remove(pos);
+        } else {
+            app.plot.y2_cols.push(col);
+        }
+    }
+
+    #[test]
+    fn test_toggle_y2_col_adds_to_y2() {
+        let df = df! { "a" => [1i32], "b" => [2i32] }.unwrap();
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
+        toggle_y2_col(&mut app, 1);
+        assert_eq!(app.plot.y2_cols, vec![1]);
+        assert!(app.plot.y_cols.is_empty());
+    }
+
+    #[test]
+    fn test_toggle_y2_col_removes_from_y1_if_present() {
+        let df = df! { "a" => [1i32], "b" => [2i32] }.unwrap();
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
+        app.plot.y_cols = vec![1];
+        toggle_y2_col(&mut app, 1);
+        assert_eq!(app.plot.y2_cols, vec![1]);
+        assert!(app.plot.y_cols.is_empty(), "col should be removed from y_cols");
+    }
+
+    #[test]
+    fn test_toggle_y2_col_removes_if_already_in_y2() {
+        let df = df! { "a" => [1i32], "b" => [2i32] }.unwrap();
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
+        app.plot.y2_cols = vec![1];
+        toggle_y2_col(&mut app, 1);
+        assert!(app.plot.y2_cols.is_empty());
+    }
+
+    #[test]
+    fn test_toggle_y1_col_removes_from_y2_if_present() {
+        let df = df! { "a" => [1i32], "b" => [2i32] }.unwrap();
+        let mut app = App::new(df, "test.csv".to_string(), crate::theme::default_theme());
+        app.plot.y2_cols = vec![0];
+        toggle_y_col(&mut app, 0);
+        assert_eq!(app.plot.y_cols, vec![0]);
+        assert!(app.plot.y2_cols.is_empty(), "col should be removed from y2_cols");
     }
 }
 

@@ -90,6 +90,7 @@ pub(crate) fn dispatch_viewer_key(app: &mut App, key: &event::KeyEvent) {
             event::KeyCode::Char('=') => app.autofit_all_columns(),
             event::KeyCode::Char('p') if !app.df.is_empty() => {
                 app.plot.y_cols.clear();
+                app.plot.y2_cols.clear();
                 if let Some(col) = app.state.selected_column() {
                     app.plot.y_cols.push(col);
                 }
@@ -150,10 +151,27 @@ pub(crate) fn dispatch_viewer_key(app: &mut App, key: &event::KeyEvent) {
             event::KeyCode::Right | event::KeyCode::Char('l') => app.select_next_column(),
             event::KeyCode::Char(' ') => {
                 if let Some(col) = app.state.selected_column() {
+                    // mutual exclusion: remove from y2 if present
+                    if let Some(pos) = app.plot.y2_cols.iter().position(|&c| c == col) {
+                        app.plot.y2_cols.remove(pos);
+                    }
                     if let Some(pos) = app.plot.y_cols.iter().position(|&c| c == col) {
                         app.plot.y_cols.remove(pos);
                     } else {
                         app.plot.y_cols.push(col);
+                    }
+                }
+            }
+            event::KeyCode::Char('2') => {
+                if let Some(col) = app.state.selected_column() {
+                    // mutual exclusion: remove from y_cols if present
+                    if let Some(pos) = app.plot.y_cols.iter().position(|&c| c == col) {
+                        app.plot.y_cols.remove(pos);
+                    }
+                    if let Some(pos) = app.plot.y2_cols.iter().position(|&c| c == col) {
+                        app.plot.y2_cols.remove(pos);
+                    } else {
+                        app.plot.y2_cols.push(col);
                     }
                 }
             }
@@ -166,6 +184,7 @@ pub(crate) fn dispatch_viewer_key(app: &mut App, key: &event::KeyEvent) {
             }
             event::KeyCode::Esc => {
                 app.plot.y_cols.clear();
+                app.plot.y2_cols.clear();
                 app.mode = Mode::Normal;
             }
             _ => {}
@@ -184,7 +203,7 @@ pub(crate) fn dispatch_viewer_key(app: &mut App, key: &event::KeyEvent) {
         },
         Mode::Plot => match key.code {
             event::KeyCode::Char('t') => {
-                app.plot.plot_type = if app.plot.y_cols.len() > 1 {
+                app.plot.plot_type = if app.plot.y_cols.len() > 1 || !app.plot.y2_cols.is_empty() {
                     match app.plot.plot_type {
                         PlotType::Line => PlotType::Bar,
                         _ => PlotType::Line,
