@@ -473,7 +473,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
 fn get_bar(app: &App, theme: &Theme) -> (String, Style) {
     match app.mode {
         Mode::PlotPickY => {
-            let y_names = if app.plot.y_cols.is_empty() {
+            let p1 = if app.plot.y_cols.is_empty() {
                 "none".to_string()
             } else {
                 app.plot
@@ -483,10 +483,20 @@ fn get_bar(app: &App, theme: &Theme) -> (String, Style) {
                     .collect::<Vec<_>>()
                     .join(", ")
             };
+            let p2 = if app.plot.y2_cols.is_empty() {
+                "none".to_string()
+            } else {
+                app.plot
+                    .y2_cols
+                    .iter()
+                    .map(|&i| app.headers[i].as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
             (
                 format!(
-                    " Y: [{}]  —  Space toggle · ←/→ navigate · i plot with index · Enter pick X · Esc cancel ",
-                    y_names
+                    " P1: [{}]  P2: [{}]  —  Space p1 · 2 p2 · ←/→ navigate · i index · Enter pick X · Esc cancel ",
+                    p1, p2
                 ),
                 Style::default()
                     .bg(theme.info)
