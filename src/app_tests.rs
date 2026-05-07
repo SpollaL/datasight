@@ -709,6 +709,12 @@ mod plot_tests {
         toggle_y_col(&mut app, 0);
         assert_eq!(app.plot.y_cols, vec![2]);
     }
+
+    #[test]
+    fn test_plot_state_default_y2_cols_empty() {
+        let state = PlotState::default();
+        assert!(state.y2_cols.is_empty());
+    }
 }
 
 mod parse_operator_tests {
