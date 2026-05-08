@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1] - 2026-05-08
+
+### Fixed
+- Sync `Cargo.lock` to package version so `cargo install --git` from the v0.6.0 tag no longer fails on the lockfile mismatch.
+
 ## [0.6.0] - 2026-05-06
 
 ### Added
