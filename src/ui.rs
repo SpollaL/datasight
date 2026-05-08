@@ -225,16 +225,13 @@ fn render_stats_popup(frame: &mut Frame, app: &mut App, theme: &Theme) {
     let area = centered_rect(40, 40, frame.area());
     frame.render_widget(Clear, area);
     let content = format!(
-        "\n Count:  {}\n Min:    {}\n Max:    {}\n Mean:   {}\n Median: {}",
+        "\n Count:  {}\n Sum:    {}\n Min:    {}\n Max:    {}\n Mean:   {}\n Median: {}",
         stats.count,
+        stats.sum.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
         stats.min,
         stats.max,
-        stats
-            .mean
-            .map_or("N/A".to_string(), |v| format!("{:.2}", v)),
-        stats
-            .median
-            .map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+        stats.mean.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+        stats.median.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
     );
     let popup = Paragraph::new(content)
         .block(
@@ -949,6 +946,7 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, theme: &Theme, full_are
         Cell::from("Count").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
         Cell::from("Nulls").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
         Cell::from("Unique").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
+        Cell::from("Sum").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
         Cell::from("Min").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
         Cell::from("Max").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
         Cell::from("Mean").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
@@ -976,6 +974,7 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, theme: &Theme, full_are
         Constraint::Length(8),
         Constraint::Length(8),
         Constraint::Length(9),
+        Constraint::Length(14),
         Constraint::Length(14),
         Constraint::Length(14),
         Constraint::Length(10),
@@ -1027,6 +1026,8 @@ fn profile_row<'a>(p: &'a ColumnProfile, idx: usize, theme: &Theme) -> Row<'a> {
         Cell::from(p.count.to_string()).style(Style::default().fg(theme.fg)),
         Cell::from(p.null_count.to_string()).style(null_style),
         Cell::from(p.unique.to_string()).style(Style::default().fg(theme.fg)),
+        Cell::from(p.sum.map_or("—".to_string(), |v| format!("{:.2}", v)))
+            .style(Style::default().fg(theme.accent)),
         Cell::from(p.min.clone()).style(Style::default().fg(theme.fg_dim)),
         Cell::from(p.max.clone()).style(Style::default().fg(theme.fg_dim)),
         Cell::from(p.mean.map_or("—".to_string(), |v| format!("{:.2}", v)))
