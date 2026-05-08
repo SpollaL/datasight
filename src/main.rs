@@ -2,6 +2,7 @@ mod app;
 mod browser;
 mod config;
 mod events;
+mod text_viewer;
 mod theme;
 mod theme_picker;
 mod ui;

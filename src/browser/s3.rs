@@ -1,4 +1,4 @@
-use crate::browser::{is_supported, BrowserError, Entry, FileBrowser};
+use crate::browser::{classify, BrowserError, Entry, EntryKind, FileBrowser};
 use object_store::aws::AmazonS3Builder;
 use object_store::path::Path;
 use object_store::ObjectStore;
@@ -59,23 +59,23 @@ impl FileBrowser for S3Backend {
             entries.push(Entry {
                 name: name.clone(),
                 path: format!("s3://{}/{}/", self.bucket, dir_path),
-                is_dir: true,
+                kind: EntryKind::Dir,
             });
         }
 
         for obj in list_result.objects {
             let name = obj.location.filename().unwrap_or("").to_string();
-            if name.is_empty() || !is_supported(&name) {
+            if name.is_empty() {
                 continue;
             }
             entries.push(Entry {
-                name: name.clone(),
+                kind: classify(&name),
                 path: format!("s3://{}/{}", self.bucket, obj.location),
-                is_dir: false,
+                name,
             });
         }
 
-        entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name)));
+        entries.sort_by(|a, b| b.is_dir().cmp(&a.is_dir()).then(a.name.cmp(&b.name)));
         Ok(entries)
     }
 

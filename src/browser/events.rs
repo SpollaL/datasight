@@ -1,8 +1,10 @@
 use crate::app::App;
-use crate::browser::app::{BrowserApp, Focus};
-use crate::browser::load_file_for_browser;
+use crate::browser::app::{BrowserApp, Focus, Viewer};
 use crate::browser::ui::browser_ui;
+use crate::browser::{load_file_for_browser, EntryKind, FileBrowser};
+use crate::config::MAX_TEXT_BYTES;
 use crate::events::dispatch_viewer_key;
+use crate::text_viewer::{dispatch_text_viewer_key, load_text, TextApp, TextLoadError};
 use crossterm::event::{self, KeyModifiers};
 
 pub fn run_browser_app(
@@ -23,14 +25,14 @@ pub fn run_browser_app(
                             let next = picker.move_down();
                             app.theme = next;
                             if let Some(ref mut viewer) = app.viewer {
-                                viewer.theme = next;
+                                viewer.set_theme(next);
                             }
                         }
                         event::KeyCode::Char('k') | event::KeyCode::Up => {
                             let prev = picker.move_up();
                             app.theme = prev;
                             if let Some(ref mut viewer) = app.viewer {
-                                viewer.theme = prev;
+                                viewer.set_theme(prev);
                             }
                         }
                         event::KeyCode::Enter => {
@@ -47,7 +49,7 @@ pub fn run_browser_app(
                             let original = picker.original_theme();
                             app.theme = original;
                             if let Some(ref mut viewer) = app.viewer {
-                                viewer.theme = original;
+                                viewer.set_theme(original);
                             }
                             app.picker = None;
                         }
@@ -92,8 +94,11 @@ pub fn run_browser_app(
                 Focus::Browser => handle_browser_key(&mut app, &key),
                 Focus::Viewer => {
                     if let Some(ref mut viewer) = app.viewer {
-                        dispatch_viewer_key(viewer, &key);
-                        if viewer.should_quit {
+                        match viewer {
+                            Viewer::DataFrame(a) => dispatch_viewer_key(a, &key),
+                            Viewer::Text(t) => dispatch_text_viewer_key(t, &key),
+                        }
+                        if viewer.should_quit() {
                             app.should_quit = true;
                         }
                     }
@@ -121,19 +126,80 @@ fn open_or_descend(app: &mut BrowserApp) {
         None => return,
     };
 
-    if entry.is_dir {
-        app.descend();
+    match entry.kind {
+        EntryKind::Dir => app.descend(),
+        EntryKind::Binary => {
+            app.status = Some(format!("Cannot preview {}: binary file", entry.name));
+        }
+        EntryKind::Data => {
+            let ext = entry.name.rsplit('.').next().unwrap_or("").to_lowercase();
+
+            // Polars happily loads object-rooted JSON as a 1-row all-null
+            // DataFrame instead of erroring, so the Err fall-through alone
+            // can't distinguish tabular from non-tabular .json. Peek the
+            // root byte: only arrays go to the DataFrame viewer; objects
+            // and scalars route directly to the text viewer with pretty
+            // printing. .ndjson/.jsonl skip this check — each line is its
+            // own document.
+            if ext == "json" && peek_json_root(&entry.path, app.backend.as_ref()) != Some(b'[') {
+                open_as_text(app, &entry.path, &entry.name);
+                return;
+            }
+
+            match load_file_for_browser(&entry.path, app.backend.as_ref()) {
+                Ok((df, title)) => {
+                    app.viewer = Some(Viewer::DataFrame(Box::new(App::new(df, title, app.theme))));
+                    app.focus = Focus::Viewer;
+                    app.status = None;
+                }
+                Err(e) => {
+                    // Polars couldn't parse a JSON array (malformed). Fall
+                    // through to text viewer rather than blocking the user.
+                    if ext == "json" {
+                        open_as_text(app, &entry.path, &entry.name);
+                    } else {
+                        app.status = Some(format!("Error loading file: {}", e));
+                    }
+                }
+            }
+        }
+        EntryKind::Text => open_as_text(app, &entry.path, &entry.name),
+    }
+}
+
+/// Returns the first non-whitespace byte of the file at `path`, or `None`
+/// if the file can't be read or is whitespace-only. For local paths this
+/// reads at most 4 KiB; for cloud paths it goes through the backend's
+/// `download_bytes` (which currently fetches the whole object).
+fn peek_json_root(path: &str, backend: &dyn FileBrowser) -> Option<u8> {
+    let bytes = if path.starts_with("az://") || path.starts_with("s3://") {
+        backend.download_bytes(path).ok()?
     } else {
-        match load_file_for_browser(&entry.path, app.backend.as_ref()) {
-            Ok((df, title)) => {
-                app.viewer = Some(App::new(df, title, app.theme));
-                app.focus = Focus::Viewer;
-                app.status = None;
-            }
-            Err(e) => {
-                app.viewer = None;
-                app.status = Some(format!("Error loading file: {}", e));
-            }
+        use std::io::Read;
+        let mut file = std::fs::File::open(path).ok()?;
+        let mut buf = [0u8; 4096];
+        let n = file.read(&mut buf).ok()?;
+        buf[..n].to_vec()
+    };
+    bytes.iter().copied().find(|b| !b.is_ascii_whitespace())
+}
+
+fn open_as_text(app: &mut BrowserApp, path: &str, name: &str) {
+    match load_text(path, app.backend.as_ref(), MAX_TEXT_BYTES) {
+        Ok(load) => {
+            app.viewer = Some(Viewer::Text(TextApp::new(
+                load,
+                path.to_string(),
+                app.theme,
+            )));
+            app.focus = Focus::Viewer;
+            app.status = None;
+        }
+        Err(TextLoadError::Binary) => {
+            app.status = Some(format!("Cannot preview {}: not a text file", name));
+        }
+        Err(TextLoadError::Io(e)) => {
+            app.status = Some(format!("Error loading file: {}", e));
         }
     }
 }

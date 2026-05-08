@@ -25,13 +25,30 @@ pub trait FileBrowser {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryKind {
+    Dir,
+    /// Tabular file the polars-backed viewer can open.
+    Data,
+    /// Probably-text file: opened in the text viewer with a UTF-8 sniff.
+    Text,
+    /// Known-binary extension; rendered grayed out and refused at open time.
+    Binary,
+}
+
 #[derive(Debug, Clone)]
 pub struct Entry {
     /// Display name — last path segment only.
     pub name: String,
     /// Full URI, e.g. "az://container/data/sales.csv" or "/home/user/data.csv".
     pub path: String,
-    pub is_dir: bool,
+    pub kind: EntryKind,
+}
+
+impl Entry {
+    pub fn is_dir(&self) -> bool {
+        self.kind == EntryKind::Dir
+    }
 }
 
 #[derive(Debug)]
@@ -57,13 +74,36 @@ impl fmt::Display for BrowserError {
 
 impl std::error::Error for BrowserError {}
 
-pub const SUPPORTED_EXTENSIONS: &[&str] = &["csv", "tsv", "parquet", "json", "ndjson", "jsonl"];
+pub const DATA_EXTENSIONS: &[&str] = &["csv", "tsv", "parquet", "json", "ndjson", "jsonl"];
 
-pub fn is_supported(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    SUPPORTED_EXTENSIONS
-        .iter()
-        .any(|ext| lower.ends_with(&format!(".{}", ext)))
+/// Extensions classified as binary — rendered grayed out, refused at open time.
+/// Anything outside both lists falls into [`EntryKind::Text`] and is sniffed
+/// for UTF-8 content when the user opens it.
+pub const BINARY_EXTENSIONS: &[&str] = &[
+    // Executables / compiled artifacts
+    "exe", "bin", "so", "dll", "dylib", "o", "a", "out", "class", "jar", "wasm",
+    // Images
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "svgz", // Audio / video
+    "mp3", "mp4", "wav", "mov", "avi", "mkv", "flac", "ogg", "webm", "m4a", "m4v",
+    // Archives
+    "zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar", // Documents / fonts
+    "pdf", "ttf", "otf", "woff", "woff2", "eot", // Local databases
+    "db", "sqlite",
+];
+
+/// Classify a file by name. Comparison is case-insensitive on the extension.
+/// Files without a recognised extension fall through to [`EntryKind::Text`].
+pub fn classify(name: &str) -> EntryKind {
+    let ext = name
+        .rsplit('.')
+        .next()
+        .filter(|e| *e != name)
+        .map(|e| e.to_lowercase());
+    match ext.as_deref() {
+        Some(e) if DATA_EXTENSIONS.contains(&e) => EntryKind::Data,
+        Some(e) if BINARY_EXTENSIONS.contains(&e) => EntryKind::Binary,
+        _ => EntryKind::Text,
+    }
 }
 
 /// Detect the URI scheme and construct the appropriate backend.
@@ -122,43 +162,86 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_supported_csv() {
-        assert!(is_supported("orders.csv"));
+    fn test_classify_csv_is_data() {
+        assert_eq!(classify("orders.csv"), EntryKind::Data);
     }
 
     #[test]
-    fn test_is_supported_parquet() {
-        assert!(is_supported("data.parquet"));
+    fn test_classify_parquet_is_data() {
+        assert_eq!(classify("data.parquet"), EntryKind::Data);
     }
 
     #[test]
-    fn test_is_supported_tsv() {
-        assert!(is_supported("data.tsv"));
+    fn test_classify_tsv_is_data() {
+        assert_eq!(classify("data.tsv"), EntryKind::Data);
     }
 
     #[test]
-    fn test_is_supported_ndjson() {
-        assert!(is_supported("data.ndjson"));
+    fn test_classify_ndjson_is_data() {
+        assert_eq!(classify("data.ndjson"), EntryKind::Data);
     }
 
     #[test]
-    fn test_is_supported_jsonl() {
-        assert!(is_supported("data.jsonl"));
+    fn test_classify_jsonl_is_data() {
+        assert_eq!(classify("data.jsonl"), EntryKind::Data);
     }
 
     #[test]
-    fn test_is_supported_json() {
-        assert!(is_supported("events.json"));
+    fn test_classify_json_is_data() {
+        assert_eq!(classify("events.json"), EntryKind::Data);
     }
 
     #[test]
-    fn test_is_supported_rejects_xlsx() {
-        assert!(!is_supported("report.xlsx"));
+    fn test_classify_png_is_binary() {
+        assert_eq!(classify("photo.png"), EntryKind::Binary);
     }
 
     #[test]
-    fn test_is_supported_rejects_no_ext() {
-        assert!(!is_supported("README"));
+    fn test_classify_zip_is_binary() {
+        assert_eq!(classify("archive.zip"), EntryKind::Binary);
+    }
+
+    #[test]
+    fn test_classify_pdf_is_binary() {
+        assert_eq!(classify("doc.pdf"), EntryKind::Binary);
+    }
+
+    #[test]
+    fn test_classify_xlsx_is_text() {
+        // .xlsx isn't in the binary denylist so it falls through to Text;
+        // the open-time UTF-8 sniff will reject it as not-text.
+        assert_eq!(classify("report.xlsx"), EntryKind::Text);
+    }
+
+    #[test]
+    fn test_classify_txt_is_text() {
+        assert_eq!(classify("notes.txt"), EntryKind::Text);
+    }
+
+    #[test]
+    fn test_classify_md_is_text() {
+        assert_eq!(classify("README.md"), EntryKind::Text);
+    }
+
+    #[test]
+    fn test_classify_yaml_is_text() {
+        assert_eq!(classify("config.yaml"), EntryKind::Text);
+    }
+
+    #[test]
+    fn test_classify_log_is_text() {
+        assert_eq!(classify("server.log"), EntryKind::Text);
+    }
+
+    #[test]
+    fn test_classify_no_ext_is_text() {
+        assert_eq!(classify("README"), EntryKind::Text);
+    }
+
+    #[test]
+    fn test_classify_uppercase_extension() {
+        assert_eq!(classify("DATA.CSV"), EntryKind::Data);
+        assert_eq!(classify("PHOTO.PNG"), EntryKind::Binary);
     }
 
     #[test]

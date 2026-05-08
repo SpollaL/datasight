@@ -2122,7 +2122,7 @@ mod null_render_tests {
             .filter(|&(x, y)| {
                 buffer
                     .cell(Position::new(x, y))
-                    .map_or(false, |c| c.symbol() == NULL_GLYPH)
+                    .is_some_and(|c| c.symbol() == NULL_GLYPH)
             })
             .count();
         assert_eq!(null_count, 1, "one numeric null should render as one ∅");
