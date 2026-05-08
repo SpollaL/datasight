@@ -225,16 +225,13 @@ fn render_stats_popup(frame: &mut Frame, app: &mut App, theme: &Theme) {
     let area = centered_rect(40, 40, frame.area());
     frame.render_widget(Clear, area);
     let content = format!(
-        "\n Count:  {}\n Min:    {}\n Max:    {}\n Mean:   {}\n Median: {}",
+        "\n Count:  {}\n Sum:    {}\n Min:    {}\n Max:    {}\n Mean:   {}\n Median: {}",
         stats.count,
+        stats.sum.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
         stats.min,
         stats.max,
-        stats
-            .mean
-            .map_or("N/A".to_string(), |v| format!("{:.2}", v)),
-        stats
-            .median
-            .map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+        stats.mean.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+        stats.median.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
     );
     let popup = Paragraph::new(content)
         .block(
@@ -373,6 +370,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
             &[
                 ("← →", "Navigate"),
                 ("Space", "Toggle Y"),
+                ("2", "Toggle P2"),
                 ("Enter", "Pick X axis"),
                 ("i", "Plot with index"),
                 ("Esc", "Cancel"),
@@ -473,7 +471,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
 fn get_bar(app: &App, theme: &Theme) -> (String, Style) {
     match app.mode {
         Mode::PlotPickY => {
-            let y_names = if app.plot.y_cols.is_empty() {
+            let p1 = if app.plot.y_cols.is_empty() {
                 "none".to_string()
             } else {
                 app.plot
@@ -483,10 +481,20 @@ fn get_bar(app: &App, theme: &Theme) -> (String, Style) {
                     .collect::<Vec<_>>()
                     .join(", ")
             };
+            let p2 = if app.plot.y2_cols.is_empty() {
+                "none".to_string()
+            } else {
+                app.plot
+                    .y2_cols
+                    .iter()
+                    .map(|&i| app.headers[i].as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
             (
                 format!(
-                    " Y: [{}]  —  Space toggle · ←/→ navigate · i plot with index · Enter pick X · Esc cancel ",
-                    y_names
+                    " P1: [{}]  P2: [{}]  —  Space p1 · 2 p2 · ←/→ navigate · i index · Enter pick X · Esc cancel ",
+                    p1, p2
                 ),
                 Style::default()
                     .bg(theme.info)
@@ -782,6 +790,7 @@ fn help_text(theme: &Theme) -> Text<'static> {
         key("p", "Mark column as Y, enter pick-Y mode"),
         key("←/→ h/l", "Navigate columns (pick-Y / pick-X)"),
         key("Space", "Toggle Y column (pick-Y)"),
+        key("2", "Toggle column into panel 2 (dual-panel mode)"),
         key("Enter", "pick-Y: advance to pick-X  |  pick-X: show chart"),
         key("i", "Plot against row index (skip pick-X)"),
         key(
@@ -937,6 +946,7 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, theme: &Theme, full_are
         Cell::from("Count").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
         Cell::from("Nulls").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
         Cell::from("Unique").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
+        Cell::from("Sum").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
         Cell::from("Min").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
         Cell::from("Max").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
         Cell::from("Mean").style(Style::default().fg(theme.info).add_modifier(Modifier::BOLD)),
@@ -964,6 +974,7 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, theme: &Theme, full_are
         Constraint::Length(8),
         Constraint::Length(8),
         Constraint::Length(9),
+        Constraint::Length(14),
         Constraint::Length(14),
         Constraint::Length(14),
         Constraint::Length(10),
@@ -1015,6 +1026,8 @@ fn profile_row<'a>(p: &'a ColumnProfile, idx: usize, theme: &Theme) -> Row<'a> {
         Cell::from(p.count.to_string()).style(Style::default().fg(theme.fg)),
         Cell::from(p.null_count.to_string()).style(null_style),
         Cell::from(p.unique.to_string()).style(Style::default().fg(theme.fg)),
+        Cell::from(p.sum.map_or("—".to_string(), |v| format!("{:.2}", v)))
+            .style(Style::default().fg(theme.accent)),
         Cell::from(p.min.clone()).style(Style::default().fg(theme.fg_dim)),
         Cell::from(p.max.clone()).style(Style::default().fg(theme.fg_dim)),
         Cell::from(p.mean.map_or("—".to_string(), |v| format!("{:.2}", v)))
@@ -1170,6 +1183,34 @@ fn render_histogram(frame: &mut Frame, app: &App, theme: &Theme, y_idx: usize, f
     frame.render_widget(chart, chart_area);
 }
 
+fn compute_x_bounds(app: &App, y_cols_all: &[usize], max_points: usize) -> [f64; 2] {
+    let x_min = y_cols_all
+        .iter()
+        .flat_map(|&y_idx| {
+            let (raw, _) = match app.plot.x_col {
+                Some(x_idx) => extract_plot_data(app, x_idx, y_idx),
+                None => (extract_plot_data_indexed(app, y_idx), false),
+            };
+            downsample(raw, max_points).into_iter().map(|p| p.0)
+        })
+        .fold(f64::INFINITY, f64::min);
+    let x_max = y_cols_all
+        .iter()
+        .flat_map(|&y_idx| {
+            let (raw, _) = match app.plot.x_col {
+                Some(x_idx) => extract_plot_data(app, x_idx, y_idx),
+                None => (extract_plot_data_indexed(app, y_idx), false),
+            };
+            downsample(raw, max_points).into_iter().map(|p| p.0)
+        })
+        .fold(f64::NEG_INFINITY, f64::max);
+    if x_min == f64::INFINITY || x_max == f64::NEG_INFINITY {
+        [0.0, 1.0]
+    } else {
+        [x_min, x_max]
+    }
+}
+
 fn render_plot(frame: &mut Frame, app: &App, theme: &Theme, full_area: Rect) {
     frame.render_widget(Clear, full_area);
 
@@ -1177,53 +1218,47 @@ fn render_plot(frame: &mut Frame, app: &App, theme: &Theme, full_area: Rect) {
         return;
     }
 
-    // Histogram: single-column only; use first Y col.
-    if matches!(app.plot.plot_type, PlotType::Histogram) {
+    let dual = !app.plot.y2_cols.is_empty();
+
+    // Histogram only in single-panel, single-column mode.
+    if matches!(app.plot.plot_type, PlotType::Histogram) && !dual {
         render_histogram(frame, app, theme, app.plot.y_cols[0], full_area);
         return;
     }
 
     let max_points = (full_area.width as usize * 2).max(200);
 
-    // Extract and downsample data for every Y column. When x_col is None the
-    // X axis is the row index; when it's Some(idx), use that column as X.
-    let all_series: Vec<(Vec<(f64, f64)>, bool)> = app
-        .plot
-        .y_cols
-        .iter()
-        .map(|&y_idx| {
-            let (raw, cat) = match app.plot.x_col {
-                Some(x_idx) => extract_plot_data(app, x_idx, y_idx),
-                None => (extract_plot_data_indexed(app, y_idx), false),
-            };
-            (downsample(raw, max_points), cat)
-        })
-        .collect();
-
-    let x_is_categorical = all_series.iter().any(|(_, cat)| *cat);
-
-    let nonempty: Vec<(usize, &Vec<(f64, f64)>)> = all_series
-        .iter()
-        .enumerate()
-        .filter(|(_, (d, _))| !d.is_empty())
-        .map(|(i, (d, _))| (i, d))
-        .collect();
-
-    // Use first non-empty series length so categorical X labels render even when the
-    // first selected Y column has no numeric data.
-    let first_len = nonempty.first().map(|(_, d)| d.len()).unwrap_or(0);
-    let x_labels = match (x_is_categorical, app.plot.x_col) {
-        (true, Some(x_idx)) => collect_all_x_labels(app, x_idx, first_len),
-        _ => vec![],
+    // Rotated categorical X labels are only shown in single-panel mode.
+    let (x_labels, label_height) = if !dual {
+        let all_series: Vec<(Vec<(f64, f64)>, bool)> = app
+            .plot
+            .y_cols
+            .iter()
+            .map(|&y_idx| {
+                let (raw, cat) = match app.plot.x_col {
+                    Some(x_idx) => extract_plot_data(app, x_idx, y_idx),
+                    None => (extract_plot_data_indexed(app, y_idx), false),
+                };
+                (downsample(raw, max_points), cat)
+            })
+            .collect();
+        let x_is_categorical = all_series.iter().any(|(_, cat)| *cat);
+        let first_len = all_series
+            .iter()
+            .find(|(d, _)| !d.is_empty())
+            .map(|(d, _)| d.len())
+            .unwrap_or(0);
+        let labels = match (x_is_categorical, app.plot.x_col) {
+            (true, Some(x_idx)) => collect_all_x_labels(app, x_idx, first_len),
+            _ => vec![],
+        };
+        let max_label_len = labels.iter().map(|s| s.chars().count()).max().unwrap_or(0);
+        let lh = (max_label_len as u16).min(full_area.height / 3);
+        (labels, lh)
+    } else {
+        (vec![], 0)
     };
-    let max_label_len = x_labels
-        .iter()
-        .map(|s| s.chars().count())
-        .max()
-        .unwrap_or(0);
-    let label_height = (max_label_len as u16).min(full_area.height / 3);
 
-    // Three-zone layout: chart | rotated-label strip | status bar
     let zones = Layout::default()
         .direction(ratatui::layout::Direction::Vertical)
         .constraints([
@@ -1236,20 +1271,139 @@ fn render_plot(frame: &mut Frame, app: &App, theme: &Theme, full_area: Rect) {
     let label_area = zones[1];
     let bar_area = zones[2];
 
-    let cycle_hint = if app.plot.y_cols.len() > 1 {
+    let cycle_hint = if app.plot.y_cols.len() > 1 || dual {
         "t cycle line/bar"
     } else {
         "t cycle line/bar/histogram"
     };
+    let type_label = if dual && matches!(app.plot.plot_type, PlotType::Histogram) {
+        "Bar"
+    } else {
+        app.plot_type_label()
+    };
     frame.render_widget(
         Paragraph::new(format!(
             " {} chart  |  {}  |  Esc / p to close ",
-            app.plot_type_label(),
-            cycle_hint
+            type_label, cycle_hint
         ))
         .style(Style::default().bg(theme.bg_alt).fg(theme.fg_dim)),
         bar_area,
     );
+
+    if dual {
+        let all_y_cols: Vec<usize> = app
+            .plot
+            .y_cols
+            .iter()
+            .chain(app.plot.y2_cols.iter())
+            .copied()
+            .collect();
+        let x_bounds = compute_x_bounds(app, &all_y_cols, max_points);
+        let panels = Layout::default()
+            .direction(ratatui::layout::Direction::Vertical)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(chart_area);
+        render_plot_panel(
+            frame,
+            app,
+            theme,
+            &app.plot.y_cols,
+            panels[0],
+            max_points,
+            x_bounds,
+        );
+        render_plot_panel(
+            frame,
+            app,
+            theme,
+            &app.plot.y2_cols,
+            panels[1],
+            max_points,
+            x_bounds,
+        );
+    } else {
+        let x_bounds = compute_x_bounds(app, &app.plot.y_cols, max_points);
+        render_plot_panel(
+            frame,
+            app,
+            theme,
+            &app.plot.y_cols,
+            chart_area,
+            max_points,
+            x_bounds,
+        );
+        if !x_labels.is_empty() && label_area.height > 0 {
+            // Compute y_label_width for rotated-label alignment (single-panel only).
+            let all_series: Vec<(Vec<(f64, f64)>, bool)> = app
+                .plot
+                .y_cols
+                .iter()
+                .map(|&y_idx| {
+                    let (raw, _cat) = match app.plot.x_col {
+                        Some(x_idx) => extract_plot_data(app, x_idx, y_idx),
+                        None => (extract_plot_data_indexed(app, y_idx), false),
+                    };
+                    (downsample(raw, max_points), false)
+                })
+                .collect();
+            let nonempty: Vec<(usize, &Vec<(f64, f64)>)> = all_series
+                .iter()
+                .enumerate()
+                .filter(|(_, (d, _))| !d.is_empty())
+                .map(|(i, (d, _))| (i, d))
+                .collect();
+            let first_len = nonempty.first().map(|(_, d)| d.len()).unwrap_or(0);
+            let y_min = nonempty
+                .iter()
+                .flat_map(|(_, d)| d.iter().map(|p| p.1))
+                .fold(f64::INFINITY, f64::min);
+            let y_max = nonempty
+                .iter()
+                .flat_map(|(_, d)| d.iter().map(|p| p.1))
+                .fold(f64::NEG_INFINITY, f64::max);
+            let y_pad = (y_max - y_min).abs() * config::Y_AXIS_PADDING;
+            let y_bounds = [y_min - y_pad, y_max + y_pad];
+            let y_labels = numeric_axis_labels(y_bounds[0], y_bounds[1], config::Y_AXIS_TICKS);
+            let y_label_width = max_label_width(&y_labels);
+            render_vertical_x_labels(
+                frame,
+                &x_labels,
+                first_len,
+                chart_area,
+                label_area,
+                y_label_width,
+                theme.fg_dim,
+            );
+        }
+    }
+}
+
+fn render_plot_panel(
+    frame: &mut Frame,
+    app: &App,
+    theme: &Theme,
+    y_cols: &[usize],
+    area: Rect,
+    max_points: usize,
+    x_bounds: [f64; 2],
+) {
+    let all_series: Vec<(Vec<(f64, f64)>, bool)> = y_cols
+        .iter()
+        .map(|&y_idx| {
+            let (raw, cat) = match app.plot.x_col {
+                Some(x_idx) => extract_plot_data(app, x_idx, y_idx),
+                None => (extract_plot_data_indexed(app, y_idx), false),
+            };
+            (downsample(raw, max_points), cat)
+        })
+        .collect();
+
+    let nonempty: Vec<(usize, &Vec<(f64, f64)>)> = all_series
+        .iter()
+        .enumerate()
+        .filter(|(_, (d, _))| !d.is_empty())
+        .map(|(i, (d, _))| (i, d))
+        .collect();
 
     if nonempty.is_empty() {
         let msg = Paragraph::new(" No data to plot. Y columns must be numeric (int or float). ")
@@ -1266,18 +1420,10 @@ fn render_plot(frame: &mut Frame, app: &App, theme: &Theme, full_area: Rect) {
                     .border_style(Style::default().fg(theme.error)),
             )
             .style(Style::default().bg(theme.bg).fg(theme.fg));
-        frame.render_widget(msg, chart_area);
+        frame.render_widget(msg, area);
         return;
     }
 
-    let x_min = nonempty
-        .iter()
-        .flat_map(|(_, d)| d.iter().map(|p| p.0))
-        .fold(f64::INFINITY, f64::min);
-    let x_max = nonempty
-        .iter()
-        .flat_map(|(_, d)| d.iter().map(|p| p.0))
-        .fold(f64::NEG_INFINITY, f64::max);
     let y_min = nonempty
         .iter()
         .flat_map(|(_, d)| d.iter().map(|p| p.1))
@@ -1306,16 +1452,13 @@ fn render_plot(frame: &mut Frame, app: &App, theme: &Theme, full_area: Rect) {
         })
         .collect();
 
-    let title_y = app
-        .plot
-        .y_cols
+    let title_y = y_cols
         .iter()
         .map(|&i| app.headers[i].as_str())
         .collect::<Vec<_>>()
         .join(", ");
 
     let y_labels = numeric_axis_labels(y_bounds[0], y_bounds[1], config::Y_AXIS_TICKS);
-    let y_label_width = max_label_width(&y_labels);
 
     let x_header: &str = app
         .plot
@@ -1341,12 +1484,12 @@ fn render_plot(frame: &mut Frame, app: &App, theme: &Theme, full_area: Rect) {
             Axis::default()
                 .title(x_header)
                 .style(Style::default().fg(theme.fg_dim))
-                .bounds([x_min, x_max]),
+                .bounds(x_bounds),
         )
         .y_axis(
             Axis::default()
-                .title(if app.plot.y_cols.len() == 1 {
-                    app.headers[app.plot.y_cols[0]].as_str()
+                .title(if y_cols.len() == 1 {
+                    app.headers[y_cols[0]].as_str()
                 } else {
                     "Value"
                 })
@@ -1355,36 +1498,27 @@ fn render_plot(frame: &mut Frame, app: &App, theme: &Theme, full_area: Rect) {
                 .bounds(y_bounds),
         );
 
-    frame.render_widget(chart, chart_area);
+    frame.render_widget(chart, area);
 
-    // Legend for multi-series plots.
-    if app.plot.y_cols.len() > 1 {
-        render_plot_legend(frame, app, theme, chart_area);
-    }
-
-    if !x_labels.is_empty() && label_area.height > 0 {
-        render_vertical_x_labels(
-            frame,
-            &x_labels,
-            first_len,
-            chart_area,
-            label_area,
-            y_label_width,
-            theme.fg_dim,
-        );
+    if y_cols.len() > 1 {
+        render_plot_legend(frame, app, theme, y_cols, area);
     }
 }
 
-fn render_plot_legend(frame: &mut Frame, app: &App, theme: &Theme, chart_area: Rect) {
-    let legend_inner_w = app
-        .plot
-        .y_cols
+fn render_plot_legend(
+    frame: &mut Frame,
+    app: &App,
+    theme: &Theme,
+    y_cols: &[usize],
+    chart_area: Rect,
+) {
+    let legend_inner_w = y_cols
         .iter()
-        .map(|&i| app.headers[i].chars().count() + 3) // "● " prefix + padding
+        .map(|&i| app.headers[i].chars().count() + 3)
         .max()
         .unwrap_or(4) as u16;
-    let legend_w = legend_inner_w + 2; // borders
-    let legend_h = app.plot.y_cols.len() as u16 + 2;
+    let legend_w = legend_inner_w + 2;
+    let legend_h = y_cols.len() as u16 + 2;
 
     let legend_x = chart_area
         .x
@@ -1404,9 +1538,7 @@ fn render_plot_legend(frame: &mut Frame, app: &App, theme: &Theme, chart_area: R
         height: legend_h,
     };
 
-    let lines: Vec<Line<'_>> = app
-        .plot
-        .y_cols
+    let lines: Vec<Line<'_>> = y_cols
         .iter()
         .enumerate()
         .map(|(i, &y_idx)| {

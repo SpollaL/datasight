@@ -399,6 +399,51 @@ assert_not_contains "J/picky-esc2"  "Space toggle"
 
 quit
 
+# ── Suite J2: Dual-panel plot mode ─────────────────────────────────────────────
+echo ""
+echo "=== Suite J2: Dual-panel plot mode ==="
+
+start_app "tests/fixtures/orders.csv"
+
+# J2-1: assign total_amount to panel 1 (pre-selected by p), quantity to panel 2
+send "lllllllll"          # total_amount (col 9)
+send "p" 0.25             # PlotPickY: total_amount pre-selected in y_cols
+assert_contains "J2/picky-mode" "P1"  # status bar shows P1/P2 labels
+
+key Left 0.15
+key Left 0.15             # navigate to quantity (col 7)
+send "2" 0.25             # toggle quantity into y2_cols (panel 2)
+assert_contains "J2/p2-assigned" "quantity"  # quantity appears in P2 status
+
+# J2-2: guard: pressing 2 again on quantity removes it from y2 (toggle off)
+# navigate back to total_amount — pressing 2 on it (the only y1 col) must be a no-op
+send "ll"                 # back to total_amount (col 9)
+send "2" 0.15             # this would drain y_cols — must be refused
+assert_contains "J2/drain-guard" "total_amount"  # total_amount still in P1
+
+# J2-3: re-navigate to quantity, ensure it is still in P2 (guard didn't corrupt state)
+key Left 0.15
+key Left 0.15             # back to quantity
+assert_contains "J2/p2-intact" "quantity"
+
+# J2-4: press i to plot against row index
+send "i" 0.40
+assert_contains "J2/panel1-title" "total_amount"   # panel 1 chart title
+assert_contains "J2/panel2-title" "quantity"       # panel 2 chart title
+
+# J2-5: t cycles Line → Bar only (no Histogram) in dual mode
+send "t" 0.25
+assert_contains     "J2/dual-bar"     "Bar"
+assert_not_contains "J2/dual-no-hist" "Histogram"
+send "t" 0.25
+assert_contains     "J2/dual-line"    "Line"
+
+esc
+sleep 0.15
+assert_contains "J2/dual-exit" "order_id"
+
+quit
+
 # ── Suite K: Help popup ────────────────────────────────────────────────────────
 echo ""
 echo "=== Suite K: Help popup ==="

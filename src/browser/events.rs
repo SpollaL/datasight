@@ -57,8 +57,11 @@ pub fn run_browser_app(
                 continue;
             }
 
-            // T (uppercase) opens the picker.
-            if key.code == event::KeyCode::Char('T') {
+            // T (uppercase) opens the picker — but not when the viewer is accepting text input
+            // (Search, Filter, ColumnsView/UniqueValues in search sub-mode).
+            let viewer_typing = app.focus == Focus::Viewer
+                && app.viewer.as_ref().map(|v| v.is_typing()).unwrap_or(false);
+            if key.code == event::KeyCode::Char('T') && !viewer_typing {
                 app.picker = Some(crate::theme_picker::ThemePicker::open(app.theme));
                 continue;
             }

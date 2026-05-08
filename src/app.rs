@@ -23,6 +23,7 @@ pub struct ColumnProfile {
     pub count: usize,
     pub null_count: usize,
     pub unique: usize,
+    pub sum: Option<f64>,
     pub min: String,
     pub max: String,
     pub mean: Option<f64>,
@@ -69,6 +70,7 @@ pub enum AggFunc {
 #[derive(Default, Clone)]
 pub struct ColumnStats {
     pub count: usize,
+    pub sum: Option<f64>,
     pub min: String,
     pub max: String,
     pub mean: Option<f64>,
@@ -112,6 +114,7 @@ pub struct GroupByState {
 #[derive(Default)]
 pub struct PlotState {
     pub y_cols: Vec<usize>,
+    pub y2_cols: Vec<usize>,
     pub x_col: Option<usize>,
     pub plot_type: PlotType,
 }
@@ -705,12 +708,14 @@ impl App {
             .ok()
             .map(|s| s.value().to_string())
             .unwrap_or_default();
-        let (mean, median) = series
-            .as_series()
+        let s = series.as_series();
+        let sum = s.as_ref().and_then(|s| s.sum::<f64>().ok());
+        let (mean, median) = s
             .map(|s| (s.mean(), s.median()))
             .unwrap_or((None, None));
         ColumnStats {
             count,
+            sum,
             min,
             max,
             mean,
@@ -890,14 +895,17 @@ impl App {
                     .ok()
                     .map(|s| s.value().to_string())
                     .unwrap_or_default();
-                let mean = col.as_series().and_then(|s| s.mean());
-                let median = col.as_series().and_then(|s| s.median());
+                let s = col.as_series();
+                let sum = s.as_ref().and_then(|s| s.sum::<f64>().ok());
+                let mean = s.as_ref().and_then(|s| s.mean());
+                let median = s.and_then(|s| s.median());
                 ColumnProfile {
                     name,
                     dtype,
                     count,
                     null_count,
                     unique,
+                    sum,
                     min,
                     max,
                     mean,
@@ -937,6 +945,15 @@ impl App {
             } else {
                 Some(0)
             });
+    }
+
+    pub fn is_typing(&self) -> bool {
+        match self.mode {
+            Mode::Search | Mode::Filter => true,
+            Mode::ColumnsView => self.columns_view.searching,
+            Mode::UniqueValues => self.unique_values.searching,
+            _ => false,
+        }
     }
 
     pub fn plot_type_label(&self) -> &str {
