@@ -230,8 +230,12 @@ fn render_stats_popup(frame: &mut Frame, app: &mut App, theme: &Theme) {
         stats.sum.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
         stats.min,
         stats.max,
-        stats.mean.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
-        stats.median.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+        stats
+            .mean
+            .map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+        stats
+            .median
+            .map_or("N/A".to_string(), |v| format!("{:.2}", v)),
     );
     let popup = Paragraph::new(content)
         .block(

@@ -710,9 +710,7 @@ impl App {
             .unwrap_or_default();
         let s = series.as_series();
         let sum = s.as_ref().and_then(|s| s.sum::<f64>().ok());
-        let (mean, median) = s
-            .map(|s| (s.mean(), s.median()))
-            .unwrap_or((None, None));
+        let (mean, median) = s.map(|s| (s.mean(), s.median())).unwrap_or((None, None));
         ColumnStats {
             count,
             sum,
