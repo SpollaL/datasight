@@ -1,14 +1,46 @@
 use crate::app::App;
 use crate::browser::{Entry, FileBrowser};
+use crate::text_viewer::TextApp;
 use crate::theme::Theme;
 use crate::theme_picker::ThemePicker;
+
+/// One of the two viewer types loaded into the right-hand pane. The
+/// dataframe variant wraps the existing tabular viewer; the text variant
+/// drives `TextApp` for plain-text and pretty-printed JSON files.
+pub enum Viewer {
+    DataFrame(Box<App>),
+    Text(TextApp),
+}
+
+impl Viewer {
+    pub fn set_theme(&mut self, theme: &'static Theme) {
+        match self {
+            Viewer::DataFrame(a) => a.theme = theme,
+            Viewer::Text(t) => t.theme = theme,
+        }
+    }
+
+    pub fn is_typing(&self) -> bool {
+        match self {
+            Viewer::DataFrame(a) => a.is_typing(),
+            Viewer::Text(t) => t.is_typing(),
+        }
+    }
+
+    pub fn should_quit(&self) -> bool {
+        match self {
+            Viewer::DataFrame(a) => a.should_quit,
+            Viewer::Text(t) => t.should_quit,
+        }
+    }
+}
 
 pub struct BrowserApp {
     pub backend: Box<dyn FileBrowser>,
     pub entries: Vec<Entry>,
     pub cursor: usize,
     pub cwd: String,
-    pub viewer: Option<App>,
+    pub viewer: Option<Viewer>,
     pub browser_visible: bool,
     pub focus: Focus,
     pub status: Option<String>,
@@ -57,7 +89,7 @@ impl BrowserApp {
     /// Descend into the directory at the current cursor (no-op if it's a file).
     pub fn descend(&mut self) {
         if let Some(entry) = self.entries.get(self.cursor) {
-            if entry.is_dir {
+            if entry.is_dir() {
                 let path = entry.path.clone();
                 self.refresh_listing(path);
             }
@@ -115,7 +147,7 @@ fn parent_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::browser::{BrowserError, Entry, FileBrowser};
+    use crate::browser::{BrowserError, Entry, EntryKind, FileBrowser};
 
     struct StubBackend {
         entries: Vec<Entry>,
@@ -145,9 +177,9 @@ mod tests {
 
     fn file_entry(name: &str) -> Entry {
         Entry {
+            kind: crate::browser::classify(name),
             name: name.to_string(),
             path: format!("/test/{}", name),
-            is_dir: false,
         }
     }
 
@@ -155,7 +187,7 @@ mod tests {
         Entry {
             name: name.to_string(),
             path: format!("/test/{}", name),
-            is_dir: true,
+            kind: EntryKind::Dir,
         }
     }
 

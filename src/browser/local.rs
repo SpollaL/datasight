@@ -1,4 +1,4 @@
-use crate::browser::{is_supported, BrowserError, Entry, FileBrowser};
+use crate::browser::{classify, BrowserError, Entry, EntryKind, FileBrowser};
 use std::fs;
 
 pub struct LocalBackend;
@@ -24,13 +24,13 @@ impl FileBrowser for LocalBackend {
                 dirs.push(Entry {
                     name,
                     path,
-                    is_dir: true,
+                    kind: EntryKind::Dir,
                 });
-            } else if is_supported(&name) {
+            } else {
                 files.push(Entry {
+                    kind: classify(&name),
                     name,
                     path,
-                    is_dir: false,
                 });
             }
         }
@@ -47,14 +47,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_list_fixtures_only_supported_formats() {
+    fn test_list_fixtures_classifies_data_files() {
         let backend = LocalBackend;
         let entries = backend.list("tests/fixtures").expect("list should succeed");
-        for e in &entries {
-            if !e.is_dir {
-                assert!(is_supported(&e.name), "unexpected file: {}", e.name);
-            }
-        }
+        let csv = entries
+            .iter()
+            .find(|e| e.name == "orders.csv")
+            .expect("orders.csv missing");
+        assert_eq!(csv.kind, EntryKind::Data);
     }
 
     #[test]
@@ -62,7 +62,9 @@ mod tests {
         let backend = LocalBackend;
         let entries = backend.list("tests/fixtures").expect("list should succeed");
         assert!(
-            entries.iter().any(|e| e.name == "orders.csv" && !e.is_dir),
+            entries
+                .iter()
+                .any(|e| e.name == "orders.csv" && !e.is_dir()),
             "orders.csv not found in listing"
         );
     }
@@ -79,8 +81,8 @@ mod tests {
             .list(tmp.to_str().unwrap())
             .expect("list should succeed");
         assert_eq!(entries.len(), 2, "expected exactly 1 dir + 1 file");
-        assert!(entries[0].is_dir, "directory should appear before file");
-        assert!(!entries[1].is_dir, "file should appear after directory");
+        assert!(entries[0].is_dir(), "directory should appear before file");
+        assert!(!entries[1].is_dir(), "file should appear after directory");
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -103,6 +105,25 @@ mod tests {
             entries.iter().all(|e| !e.name.starts_with('.')),
             "hidden files should be excluded"
         );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_list_includes_text_and_binary_files() {
+        let tmp = std::env::temp_dir().join("datasight_test_kinds");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::create_dir_all(&tmp);
+        let _ = std::fs::write(tmp.join("data.csv"), "a,b\n1,2");
+        let _ = std::fs::write(tmp.join("notes.txt"), "hi");
+        let _ = std::fs::write(tmp.join("photo.png"), [0u8, 1, 2, 3]);
+        let backend = LocalBackend;
+        let entries = backend
+            .list(tmp.to_str().unwrap())
+            .expect("list should succeed");
+        let by_name = |n: &str| entries.iter().find(|e| e.name == n).map(|e| e.kind);
+        assert_eq!(by_name("data.csv"), Some(EntryKind::Data));
+        assert_eq!(by_name("notes.txt"), Some(EntryKind::Text));
+        assert_eq!(by_name("photo.png"), Some(EntryKind::Binary));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

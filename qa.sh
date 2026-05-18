@@ -331,7 +331,7 @@ start_app "tests/fixtures/orders.csv"
 # J1: single-Y plot — PlotPickY → PlotPickX → Plot
 send "lllllllll"          # total_amount (col 9)
 send "p" 0.25
-assert_contains "J/picky-mode"   "Space toggle"   # in PlotPickY
+assert_contains "J/picky-mode"   "Toggle Y"   # in PlotPickY
 assert_contains "J/picky-presel" "total_amount"   # pre-selected in status bar
 
 enter 0.25                # confirm single Y, move to PlotPickX
@@ -392,10 +392,10 @@ send "p" 0.25
 enter 0.25                # go to PlotPickX
 esc
 sleep 0.15
-assert_contains "J/pickx-esc-back" "Space toggle"  # back in PlotPickY
+assert_contains "J/pickx-esc-back" "Toggle Y"  # back in PlotPickY
 esc
 sleep 0.15
-assert_not_contains "J/picky-esc2"  "Space toggle"
+assert_not_contains "J/picky-esc2"  "Toggle Y"
 
 quit
 
@@ -666,6 +666,95 @@ send "q" 0.20
 
 # Reset theme state so the next QA run (and the dev's normal use) starts fresh.
 rm -f "$STATE_FILE"
+
+# ── Suite Z: Text viewer ──────────────────────────────────────────────────────
+echo ""
+echo "=== Suite Z: Text viewer ==="
+
+# Browser listing in tests/fixtures/ (alphabetical):
+#   0 orders.csv  1 orders.json  2 orders.ndjson  3 orders.parquet
+#   4 orders.tsv  5 orders_nulls.csv  6 sample.json  7 sample.txt
+#   8 sample_binary.png  9 wide.csv
+
+# Z1: open sample.txt — text viewer renders content with UTF-8 title marker
+start_app "browse tests/fixtures/"
+send "jjjjjjj" 0.30   # cursor → sample.txt
+enter 0.40
+assert_contains "Z1/text-content"   "Datasight text viewer fixture"
+assert_contains "Z1/title-utf8"     "UTF-8"
+assert_contains "Z1/title-lines"    "lines"
+quit
+
+# Z2: j scrolls down, k scrolls back up — content remains rendered
+start_app "browse tests/fixtures/"
+send "jjjjjjj" 0.30
+enter 0.40
+send "jjj" 0.20
+send "kkk" 0.20
+assert_contains "Z2/scroll-roundtrip" "Datasight text viewer fixture"
+quit
+
+# Z3: G then gg returns to top of file (covered by unit tests; this is a
+# smoke check that the keys don't crash the viewer)
+start_app "browse tests/fixtures/"
+send "jjjjjjj" 0.30
+enter 0.40
+send "G" 0.30
+send "gg" 0.30
+assert_contains "Z3/back-to-top" "Datasight text viewer fixture"
+quit
+
+# Z4: / opens search; typing a query shows match count; Enter jumps; n cycles
+start_app "browse tests/fixtures/"
+send "jjjjjjj" 0.30
+enter 0.40
+send "/" 0.20
+send "needle" 0.30
+# Still in Search mode — bottom status row reports match count.
+assert_contains "Z4/match-count" "match"
+key Enter 0.30
+# Confirm scrolled to first occurrence of the token.
+assert_contains "Z4/jumped-to-needle" "needle"
+send "n" 0.20
+assert_contains "Z4/cycle-still-on-match" "needle"
+quit
+
+# Z5: L toggles line numbers (rendering still succeeds, content still visible)
+start_app "browse tests/fixtures/"
+send "jjjjjjj" 0.30
+enter 0.40
+send "L" 0.20
+assert_contains "Z5/text-still-visible" "Datasight text viewer"
+send "L" 0.20
+assert_contains "Z5/text-after-retoggle" "Datasight text viewer"
+quit
+
+# Z6: w toggles word wrap (rendering survives the toggle)
+start_app "browse tests/fixtures/"
+send "jjjjjjj" 0.30
+enter 0.40
+send "w" 0.20
+assert_contains "Z6/wrap-off-content" "Datasight text viewer"
+send "w" 0.20
+assert_contains "Z6/wrap-on-content"  "Datasight text viewer"
+quit
+
+# Z7: non-tabular .json falls through to text viewer with pretty-print
+start_app "browse tests/fixtures/"
+send "jjjjjj" 0.30   # cursor → sample.json
+enter 0.50
+# Pretty-printed JSON spans multiple lines; the title flags it as such.
+assert_contains "Z7/json-pretty-title"   "pretty JSON"
+assert_contains "Z7/json-pretty-content" "version"
+quit
+
+# Z8: opening a binary file shows a status message and does not load a viewer
+start_app "browse tests/fixtures/"
+send "jjjjjjjj" 0.30  # cursor → sample_binary.png
+enter 0.40
+assert_contains "Z8/binary-status" "Cannot preview"
+# Browser still has focus and no viewer loaded — q quits cleanly.
+send "q" 0.20
 
 # ── Summary ────────────────────────────────────────────────────────────────────
 echo ""

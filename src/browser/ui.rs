@@ -1,4 +1,5 @@
-use crate::browser::app::{BrowserApp, Focus};
+use crate::browser::app::{BrowserApp, Focus, Viewer};
+use crate::text_viewer::render_text_viewer;
 use crate::theme::Theme;
 use crate::ui::ui;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -65,10 +66,11 @@ fn render_browser_pane(frame: &mut Frame, app: &BrowserApp, area: Rect, theme: &
         .entries
         .iter()
         .map(|entry| {
-            let style = if entry.is_dir {
-                Style::default().fg(theme.accent)
-            } else {
-                Style::default().fg(theme.fg)
+            let style = match entry.kind {
+                crate::browser::EntryKind::Dir => Style::default().fg(theme.accent),
+                crate::browser::EntryKind::Data => Style::default().fg(theme.fg),
+                crate::browser::EntryKind::Text => Style::default().fg(theme.fg),
+                crate::browser::EntryKind::Binary => Style::default().fg(theme.fg_dim),
             };
             ListItem::new(entry.name.clone()).style(style)
         })
@@ -87,18 +89,20 @@ fn render_browser_pane(frame: &mut Frame, app: &BrowserApp, area: Rect, theme: &
 }
 
 fn render_viewer_pane(frame: &mut Frame, app: &mut BrowserApp, area: Rect, theme: &Theme) {
-    if let Some(ref mut viewer) = app.viewer {
-        ui(frame, viewer, area);
-    } else {
-        let hint = Paragraph::new("Navigate to a file and press Enter to open it")
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(theme.fg_muted))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme.border_idle)),
-            );
-        frame.render_widget(hint, area);
+    match app.viewer {
+        Some(Viewer::DataFrame(ref mut a)) => ui(frame, a, area),
+        Some(Viewer::Text(ref mut t)) => render_text_viewer(frame, t, area, theme),
+        None => {
+            let hint = Paragraph::new("Navigate to a file and press Enter to open it")
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(theme.fg_muted))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(theme.border_idle)),
+                );
+            frame.render_widget(hint, area);
+        }
     }
 }
 
@@ -260,7 +264,7 @@ mod tests {
         let viewer =
             crate::app::App::new(df, "test.csv".to_string(), crate::theme::default_theme());
         let mut app = make_app();
-        app.viewer = Some(viewer);
+        app.viewer = Some(Viewer::DataFrame(Box::new(viewer)));
         let text = bar_text(&app);
         assert!(text.contains("j / k"), "expected 'j / k' in: {}", text);
         assert!(

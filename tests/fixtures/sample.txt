@@ -1,0 +1,19 @@
+Datasight text viewer fixture.
+This file is used by the QA script and the text_viewer tests.
+
+Section one — overview.
+The browser sub-command lists files of every kind in a sidebar.
+Plain-text files like this one open in the text viewer.
+Press / to start a search, type a query, then Enter to jump.
+Press n / N to cycle through hits.
+
+Section two — searchable token: needle.
+The token "needle" appears here so qa.sh can verify the search path.
+needle (lowercase)
+NEEDLE (uppercase, case-insensitive search should still hit)
+And one more needle for good measure.
+
+Section three — long line check.
+This-paragraph-has-no-spaces-and-is-deliberately-long-so-that-toggling-word-wrap-and-horizontal-scroll-can-be-exercised-during-the-QA-sweep.
+
+End of fixture.
