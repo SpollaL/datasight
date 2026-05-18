@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-05-18
+
+### Added
+- `datasight browse` now lists every entry. Plain text and non-array JSON open in a new text viewer with scroll, search (`/`, `n`/`N`), line numbers, word wrap (`w`), and pretty-printed JSON. Binary files render dimmed and surface a status message on Enter.
+- `T → Theme` hint added to the Normal and Filter mode shortcut bars so the theme picker is discoverable in the standard viewer.
+
+### Changed
+- Expanded crates.io package description to list all supported formats, features, and cloud backends. Keywords swapped to `csv` / `parquet` / `tui` / `dataframe` / `cli`; added `development-tools` category.
+
 ## [0.6.1] - 2026-05-08
 
 ### Fixed
