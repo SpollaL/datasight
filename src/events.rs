@@ -68,6 +68,8 @@ pub(crate) fn dispatch_viewer_key(app: &mut App, key: &event::KeyEvent) {
             event::KeyCode::Home => app.select_first_row(),
             event::KeyCode::End => app.select_last_row(),
             event::KeyCode::Char('_') => autofit_column(app),
+            event::KeyCode::Char('-') => app.shrink_selected_column(),
+            event::KeyCode::Char('+') => app.grow_selected_column(),
             event::KeyCode::Char('/') => enter_search_mode(app),
             event::KeyCode::Char('n') => go_to_next_search_result(app),
             event::KeyCode::Char('N') => go_to_previous_search_result(app),

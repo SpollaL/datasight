@@ -143,6 +143,9 @@ pub struct ColumnsViewState {
 pub struct ViewportState {
     pub row: usize,
     pub col: usize,
+    /// Width of the table pane in cells, recorded by [`crate::ui::ui`] each frame.
+    /// Zero until the first render.
+    pub width: u16,
 }
 
 // --- App ---
@@ -592,7 +595,20 @@ impl App {
             .unwrap_or(0);
         max_data
             .max(header_width)
-            .clamp(config::MIN_COLUMN_WIDTH, config::MAX_COLUMN_WIDTH)
+            .clamp(config::MIN_COLUMN_WIDTH, self.max_column_width())
+    }
+
+    /// Widest a column may become: what the table pane can actually display.
+    /// A column wider than the pane cannot be scrolled into, so fitting past
+    /// this point only hides other columns without revealing more text.
+    /// Before the first render the pane width is unknown, so fitting is
+    /// unbounded; the floor keeps `clamp` well-ordered on tiny terminals.
+    fn max_column_width(&self) -> u16 {
+        if self.viewport.width == 0 {
+            u16::MAX
+        } else {
+            self.viewport.width.max(config::MIN_COLUMN_WIDTH)
+        }
     }
 
     pub fn select_next_row(&mut self) {
@@ -648,7 +664,30 @@ impl App {
 
     pub fn autofit_selected_column(&mut self) {
         if let Some(col_idx) = self.state.selected_column() {
-            self.column_widths[col_idx] = self.compute_column_width(col_idx);
+            let fitted = self.compute_column_width(col_idx);
+            // Pressing again on an already-fitted column restores the default,
+            // so a very wide column is one keystroke away from being tidy again.
+            self.column_widths[col_idx] = if self.column_widths[col_idx] == fitted {
+                config::DEFAULT_COLUMN_WIDTH
+            } else {
+                fitted
+            };
+        }
+    }
+
+    /// Widens the selected column by one step, up to what the pane can display.
+    pub fn grow_selected_column(&mut self) {
+        if let Some(col_idx) = self.state.selected_column() {
+            let width = self.column_widths[col_idx].saturating_add(config::COLUMN_WIDTH_STEP);
+            self.column_widths[col_idx] = width.min(self.max_column_width());
+        }
+    }
+
+    /// Narrows the selected column by one step, down to [`config::MIN_COLUMN_WIDTH`].
+    pub fn shrink_selected_column(&mut self) {
+        if let Some(col_idx) = self.state.selected_column() {
+            let width = self.column_widths[col_idx].saturating_sub(config::COLUMN_WIDTH_STEP);
+            self.column_widths[col_idx] = width.max(config::MIN_COLUMN_WIDTH);
         }
     }
 

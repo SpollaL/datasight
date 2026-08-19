@@ -79,6 +79,7 @@ pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
     // Horizontal windowing: only pass columns that fit the terminal width to ratatui.
     // 2 border chars; column spacing of 1 between every pair of adjacent columns.
     let available_w = chunks[0].width.saturating_sub(2) as usize;
+    app.viewport.width = available_w as u16;
     let total_cols = app.headers.len();
     let selected_col = app.state.selected_column().unwrap_or(0);
 
@@ -814,8 +815,9 @@ fn help_text(theme: &Theme) -> Text<'static> {
         section("Other"),
         key("u", "Unique values popup (searchable, Enter to filter)"),
         key("i", "Column Inspector (schema + stats)"),
-        key("_", "Autofit column width"),
+        key("_", "Autofit column width (again: reset)"),
         key("=", "Autofit all columns"),
+        key("-/+", "Narrow / widen current column"),
         key("e", "Toggle column stats popup"),
         key("?", "Toggle this help"),
         key("q", "Quit"),

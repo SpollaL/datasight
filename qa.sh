@@ -19,9 +19,31 @@ tmux kill-session -t "$SESSION" 2>/dev/null || true
 tmux new-session -d -s "$SESSION" -x 220 -y 50
 sleep 0.3
 
+# Scratch fixtures generated at run time. These deliberately do NOT live in
+# tests/fixtures/ — Suite Z navigates that directory by hardcoded index, so an
+# extra file there would shift the cursor and break the browse suites.
+QA_TMP="$(mktemp -d)"
+trap 'rm -rf "$QA_TMP"' EXIT
+
+# Long values (issue #23): the widest cell far exceeds the old 40-char clamp.
+cat > "$QA_TMP/long_values.csv" <<'CSV'
+KeyName,LnkName,KeyLastWriteTimestamp
+windows powershe|6d2a715ad3bf3395,C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Windows PowerShell\Windows PowerShell ISE (x86).lnk,2025-05-23 10:52:37
+wordpad.lnk|b071df8746c2a535,C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Accessories\Wordpad.lnk,2025-05-23 10:52:34
+wps office.lnk|1c3aad1926983f46,c:\users\otello.j\Desktop\WPS Office.lnk,2025-05-23 11:46:14
+CSV
+
+# Single data row: polars backs length-1 columns with a Scalar, which the
+# renderer once mistook for "no data" and painted as null glyphs.
+cat > "$QA_TMP/single_row.csv" <<'CSV'
+name,qty
+solitary,7
+CSV
+
 # Helpers
-# send: send literal keys (no special key interpretation)
-send()   { tmux send-keys -t "$APP_PANE" -l "$1"; sleep "${2:-0.10}"; }
+# send: send literal keys (no special key interpretation).
+# The `--` is required: without it tmux parses a payload like "----" as flags.
+send()   { tmux send-keys -t "$APP_PANE" -l -- "$1"; sleep "${2:-0.10}"; }
 # key: send a named tmux key (Enter, Escape, PgDn, PgUp, etc.)
 key()    { tmux send-keys -t "$APP_PANE" "$1"; sleep "${2:-0.15}"; }
 esc()    { key Escape 0.15; }
@@ -553,6 +575,50 @@ tmux send-keys -t "$APP_PANE" "jjjjjjjjjjkkkkkkkkkk" ""
 sleep 0.4
 assert_contains "L/rapid-keys" "col"
 
+quit
+
+# ── Suite N: Column widths (issue #23) ────────────────────────────────────────
+echo ""
+echo "=== Suite N: Column widths ==="
+
+start_app "$QA_TMP/long_values.csv"
+
+# N1: default widths truncate the long path column
+assert_not_contains "N/default-truncates" "Wordpad.lnk"
+
+# N2: '=' autofits every column — the full path is now on screen.
+# The old MAX_COLUMN_WIDTH=40 clamp made this impossible at any terminal size.
+send "=" 0.4
+assert_contains "N/autofit-all-long" "Accessories.Wordpad.lnk"
+assert_contains "N/autofit-all-header" "KeyLastWriteTimestamp"
+
+# N3: '_' on the selected column fits it, and pressing again resets it
+send "hh" 0.15          # ensure cursor is on the first column
+send "_" 0.25           # column 0 is already fitted from N2 → resets to default
+assert_not_contains "N/autofit-toggle-reset" "windows powershe|6d2a715ad3bf3395"
+send "_" 0.25           # fit it again
+assert_contains "N/autofit-toggle-refit" "windows powershe|6d2a715ad3bf3395"
+
+# N4: '-' narrows the current column, '+' widens it back
+send "----" 0.30
+assert_not_contains "N/shrink" "windows powershe|6d2a715ad3bf3395"
+send "++++" 0.30
+assert_contains "N/grow" "windows powershe|6d2a715ad3bf3395"
+
+# N5: shrinking past the floor must not wedge the column at zero width.
+# MIN_COLUMN_WIDTH is 6, so the 7-char header renders clipped to "KeyNam" —
+# present at width 6, absent entirely at width 0.
+send "----------------" 0.40
+assert_contains     "N/shrink-floor"      "KeyNam"
+assert_not_contains "N/shrink-floor-min"  "KeyName"
+
+quit
+
+# N6: a single-row file renders its values, not null glyphs.
+# Regression for Column::as_series() returning None on Scalar-backed columns.
+start_app "$QA_TMP/single_row.csv"
+assert_contains     "N/single-row-value" "solitary"
+assert_not_contains "N/single-row-not-null" "∅"
 quit
 
 # ── Suite X: browse subcommand ────────────────────────────────────────────────
