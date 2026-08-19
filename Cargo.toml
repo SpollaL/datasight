@@ -1,6 +1,6 @@
 [package]
 name = "datasight"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 description = "Terminal TUI for CSV, TSV, Parquet, JSON and NDJSON files — vim-style navigation, filtering, sorting, group-by, plotting and cloud storage (Azure, S3)"
 license = "MIT"

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.0] - 2026-08-19
+
+### Added
+- `y` copies the selected cell to the clipboard; `Y` copies the current row, tab-separated so it pastes straight into a spreadsheet (#24). Copying uses the OSC 52 escape sequence, so it also works over SSH — see the README for terminal support.
+
 ## [0.8.0] - 2026-08-19
 
 ### Added
