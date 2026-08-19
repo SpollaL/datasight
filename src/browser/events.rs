@@ -15,6 +15,12 @@ pub fn run_browser_app(
         terminal.draw(|frame| browser_ui(frame, &mut app))?;
 
         if let event::Event::Key(key) = event::read()? {
+            // Windows terminals report both Press and Release for every key;
+            // Unix reports only Press. Without this guard each keystroke would
+            // be handled twice on Windows, so toggles cancel themselves out.
+            if key.kind != event::KeyEventKind::Press {
+                continue;
+            }
             let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
 
             // Theme picker takes precedence over all other browse-mode keys.

@@ -143,6 +143,9 @@ pub struct ColumnsViewState {
 pub struct ViewportState {
     pub row: usize,
     pub col: usize,
+    /// Width of the table pane in cells, recorded by [`crate::ui::ui`] each frame.
+    /// Zero until the first render.
+    pub width: u16,
 }
 
 // --- App ---
@@ -243,7 +246,7 @@ impl<'a> FilterQuery<'a> {
         let is_numeric_col = df
             .column(col_name)
             .ok()
-            .and_then(|c| c.as_series())
+            .map(|c| c.as_materialized_series())
             .map(|s| {
                 s.dtype().is_primitive_numeric() || matches!(s.dtype(), DataType::Decimal(_, _))
             })
@@ -376,7 +379,7 @@ impl App {
             .view
             .column(col_name)
             .ok()
-            .and_then(|c| c.as_series())
+            .map(|c| c.as_materialized_series())
             .and_then(|s| s.cast(&DataType::String).ok())
         else {
             self.search.results.clear();
@@ -580,7 +583,7 @@ impl App {
             .column(&self.headers[col_idx])
             .ok()
             .and_then(|col| {
-                let cast = col.as_series()?.cast(&DataType::String).ok()?;
+                let cast = col.as_materialized_series().cast(&DataType::String).ok()?;
                 cast.str()
                     .ok()?
                     .into_iter()
@@ -592,7 +595,20 @@ impl App {
             .unwrap_or(0);
         max_data
             .max(header_width)
-            .clamp(config::MIN_COLUMN_WIDTH, config::MAX_COLUMN_WIDTH)
+            .clamp(config::MIN_COLUMN_WIDTH, self.max_column_width())
+    }
+
+    /// Widest a column may become: what the table pane can actually display.
+    /// A column wider than the pane cannot be scrolled into, so fitting past
+    /// this point only hides other columns without revealing more text.
+    /// Before the first render the pane width is unknown, so fitting is
+    /// unbounded; the floor keeps `clamp` well-ordered on tiny terminals.
+    fn max_column_width(&self) -> u16 {
+        if self.viewport.width == 0 {
+            u16::MAX
+        } else {
+            self.viewport.width.max(config::MIN_COLUMN_WIDTH)
+        }
     }
 
     pub fn select_next_row(&mut self) {
@@ -648,7 +664,30 @@ impl App {
 
     pub fn autofit_selected_column(&mut self) {
         if let Some(col_idx) = self.state.selected_column() {
-            self.column_widths[col_idx] = self.compute_column_width(col_idx);
+            let fitted = self.compute_column_width(col_idx);
+            // Pressing again on an already-fitted column restores the default,
+            // so a very wide column is one keystroke away from being tidy again.
+            self.column_widths[col_idx] = if self.column_widths[col_idx] == fitted {
+                config::DEFAULT_COLUMN_WIDTH
+            } else {
+                fitted
+            };
+        }
+    }
+
+    /// Widens the selected column by one step, up to what the pane can display.
+    pub fn grow_selected_column(&mut self) {
+        if let Some(col_idx) = self.state.selected_column() {
+            let width = self.column_widths[col_idx].saturating_add(config::COLUMN_WIDTH_STEP);
+            self.column_widths[col_idx] = width.min(self.max_column_width());
+        }
+    }
+
+    /// Narrows the selected column by one step, down to [`config::MIN_COLUMN_WIDTH`].
+    pub fn shrink_selected_column(&mut self) {
+        if let Some(col_idx) = self.state.selected_column() {
+            let width = self.column_widths[col_idx].saturating_sub(config::COLUMN_WIDTH_STEP);
+            self.column_widths[col_idx] = width.max(config::MIN_COLUMN_WIDTH);
         }
     }
 
@@ -708,9 +747,9 @@ impl App {
             .ok()
             .map(|s| s.value().to_string())
             .unwrap_or_default();
-        let s = series.as_series();
-        let sum = s.as_ref().and_then(|s| s.sum::<f64>().ok());
-        let (mean, median) = s.map(|s| (s.mean(), s.median())).unwrap_or((None, None));
+        let s = series.as_materialized_series();
+        let sum = s.sum::<f64>().ok();
+        let (mean, median) = (s.mean(), s.median());
         ColumnStats {
             count,
             sum,
@@ -821,7 +860,7 @@ impl App {
                 .view
                 .column(&self.headers[col_idx])
                 .ok()?
-                .as_series()?
+                .as_materialized_series()
                 .clone();
             let str_s = s.cast(&DataType::String).ok()?;
             let ca = str_s.str().ok()?.clone();
@@ -882,7 +921,7 @@ impl App {
                 let dtype = col.dtype().to_string();
                 let count = col.len();
                 let null_count = col.null_count();
-                let unique = col.as_series().and_then(|s| s.n_unique().ok()).unwrap_or(0);
+                let unique = col.as_materialized_series().n_unique().unwrap_or(0);
                 let min = col
                     .min_reduce()
                     .ok()
@@ -893,10 +932,10 @@ impl App {
                     .ok()
                     .map(|s| s.value().to_string())
                     .unwrap_or_default();
-                let s = col.as_series();
-                let sum = s.as_ref().and_then(|s| s.sum::<f64>().ok());
-                let mean = s.as_ref().and_then(|s| s.mean());
-                let median = s.and_then(|s| s.median());
+                let s = col.as_materialized_series();
+                let sum = s.sum::<f64>().ok();
+                let mean = s.mean();
+                let median = s.median();
                 ColumnProfile {
                     name,
                     dtype,

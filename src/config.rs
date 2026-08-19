@@ -5,7 +5,8 @@
 
 pub const DEFAULT_COLUMN_WIDTH: u16 = 15;
 pub const MIN_COLUMN_WIDTH: u16 = 6;
-pub const MAX_COLUMN_WIDTH: u16 = 40;
+/// How much `-` / `+` change the selected column's width per press.
+pub const COLUMN_WIDTH_STEP: u16 = 4;
 pub const PAGE_SCROLL_AMOUNT: u16 = 20;
 pub const Y_AXIS_PADDING: f64 = 0.05;
 pub const Y_AXIS_TICKS: usize = 5;

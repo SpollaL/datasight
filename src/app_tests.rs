@@ -71,6 +71,108 @@ mod tests {
         assert_eq!(app.column_widths[0], 7);
     }
 
+    /// Reproduces issue #23: a column of long values (Windows paths) used to be
+    /// pinned at the old `MAX_COLUMN_WIDTH` of 40 no matter how wide the terminal.
+    fn make_wide_value_app() -> App {
+        let long = "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Windows PowerShell\\Windows PowerShell ISE (x86).lnk";
+        let df = df! { "LnkName" => [long] }.unwrap();
+        App::new(df, "test.csv".to_string(), crate::theme::default_theme())
+    }
+
+    #[test]
+    fn test_autofit_is_unbounded_before_first_render() {
+        let mut app = make_wide_value_app();
+        let len = app
+            .view
+            .column("LnkName")
+            .unwrap()
+            .str()
+            .unwrap()
+            .get(0)
+            .unwrap()
+            .chars()
+            .count() as u16;
+        app.state.select_column(Some(0));
+        app.autofit_selected_column();
+        // Viewport width is still 0 (nothing rendered), so content width wins outright.
+        assert!(
+            len > 40,
+            "fixture must exceed the old clamp to be meaningful"
+        );
+        assert_eq!(app.column_widths[0], len);
+    }
+
+    #[test]
+    fn test_autofit_is_bounded_by_viewport_width() {
+        let mut app = make_wide_value_app();
+        app.viewport.width = 60;
+        app.state.select_column(Some(0));
+        app.autofit_selected_column();
+        assert_eq!(app.column_widths[0], 60);
+    }
+
+    #[test]
+    fn test_autofit_below_viewport_width_fits_content_exactly() {
+        let mut app = make_app();
+        app.viewport.width = 200;
+        app.state.select_column(Some(0));
+        app.autofit_selected_column();
+        // "Charlie" = 7; the generous viewport must not inflate a short column.
+        assert_eq!(app.column_widths[0], 7);
+    }
+
+    #[test]
+    fn test_autofit_toggles_back_to_default() {
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.autofit_selected_column();
+        assert_eq!(app.column_widths[0], 7);
+        app.autofit_selected_column();
+        assert_eq!(app.column_widths[0], config::DEFAULT_COLUMN_WIDTH);
+    }
+
+    #[test]
+    fn test_autofit_survives_viewport_narrower_than_min_width() {
+        let mut app = make_wide_value_app();
+        app.viewport.width = 2; // narrower than MIN_COLUMN_WIDTH; clamp must stay ordered
+        app.state.select_column(Some(0));
+        app.autofit_selected_column();
+        assert_eq!(app.column_widths[0], config::MIN_COLUMN_WIDTH);
+    }
+
+    #[test]
+    fn test_grow_column_stops_at_viewport_width() {
+        let mut app = make_wide_value_app();
+        app.viewport.width = 20;
+        app.state.select_column(Some(0));
+        for _ in 0..10 {
+            app.grow_selected_column();
+        }
+        assert_eq!(app.column_widths[0], 20);
+    }
+
+    #[test]
+    fn test_shrink_column_stops_at_min_width() {
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        for _ in 0..10 {
+            app.shrink_selected_column();
+        }
+        assert_eq!(app.column_widths[0], config::MIN_COLUMN_WIDTH);
+    }
+
+    #[test]
+    fn test_grow_then_shrink_round_trips() {
+        let mut app = make_app();
+        app.viewport.width = 200;
+        app.state.select_column(Some(0));
+        let before = app.column_widths[0];
+        app.grow_selected_column();
+        assert_eq!(app.column_widths[0], before + config::COLUMN_WIDTH_STEP);
+        app.shrink_selected_column();
+        assert_eq!(app.column_widths[0], before);
+    }
+
     #[test]
     fn test_autofit_accounts_for_groupby_marker() {
         let mut app = make_app();

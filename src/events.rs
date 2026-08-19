@@ -21,6 +21,12 @@ pub fn run_app(
             ui(frame, &mut app, area);
         })?;
         if let event::Event::Key(key) = event::read()? {
+            // Windows terminals report both Press and Release for every key;
+            // Unix reports only Press. Without this guard each keystroke would
+            // be handled twice on Windows, so toggles cancel themselves out.
+            if key.kind != event::KeyEventKind::Press {
+                continue;
+            }
             dispatch_viewer_key(&mut app, &key);
         }
     }
@@ -68,6 +74,8 @@ pub(crate) fn dispatch_viewer_key(app: &mut App, key: &event::KeyEvent) {
             event::KeyCode::Home => app.select_first_row(),
             event::KeyCode::End => app.select_last_row(),
             event::KeyCode::Char('_') => autofit_column(app),
+            event::KeyCode::Char('-') => app.shrink_selected_column(),
+            event::KeyCode::Char('+') => app.grow_selected_column(),
             event::KeyCode::Char('/') => enter_search_mode(app),
             event::KeyCode::Char('n') => go_to_next_search_result(app),
             event::KeyCode::Char('N') => go_to_previous_search_result(app),

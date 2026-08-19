@@ -245,8 +245,10 @@ For histogram, the Y column is binned automatically — no X column selection ne
 | Key | Action |
 |-----|--------|
 | `i` | Open Column Inspector |
-| `_` | Autofit current column width |
+| `_` | Autofit current column width (press again to reset) |
 | `=` | Autofit all columns |
+| `-` | Narrow current column |
+| `+` | Widen current column |
 | `e` | Toggle column stats popup |
 | `?` | Toggle help popup |
 | `T` | Open theme picker |
@@ -260,7 +262,13 @@ Your terminal may not support 256 colors or Unicode box-drawing characters. Try 
 
 **Columns are too narrow or too wide**
 
-Press `=` to autofit all columns to their content, or `_` to autofit only the current column.
+Press `=` to autofit all columns to their content, or `_` to autofit only the current
+column; press `_` again to return that column to the default width.
+
+Autofit grows a column to fit its longest value, capped at the width of the table pane —
+a column wider than the pane cannot be scrolled into, so fitting beyond that point would
+only push other columns off-screen. For values longer than your terminal is wide, widen
+the terminal and autofit again, or use `-` and `+` to size the column by hand.
 
 **Filtering with `>`, `<`, `>=`, `<=` shows an error**
 
