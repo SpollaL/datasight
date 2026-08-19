@@ -173,6 +173,9 @@ pub struct App {
     pub viewport: ViewportState,
     pub theme: &'static Theme,
     pub picker: Option<ThemePicker>,
+    /// Transient one-line message shown in place of the shortcut bar.
+    /// Cleared by [`crate::events::dispatch_viewer_key`] on the next keystroke.
+    pub status: Option<String>,
 }
 
 /// Strips a leading comparison operator from `query`.
@@ -359,6 +362,7 @@ impl App {
             viewport: ViewportState::default(),
             theme,
             picker: None,
+            status: None,
         };
         if !app.df.is_empty() {
             app.state.select(Some(0));
@@ -689,6 +693,34 @@ impl App {
             let width = self.column_widths[col_idx].saturating_sub(config::COLUMN_WIDTH_STEP);
             self.column_widths[col_idx] = width.max(config::MIN_COLUMN_WIDTH);
         }
+    }
+
+    /// Copies the selected cell to the clipboard and reports the result in `status`.
+    pub fn copy_cell(&mut self) {
+        let (Some(row), Some(col)) = (self.state.selected(), self.state.selected_column()) else {
+            return;
+        };
+        let Some(text) = crate::clipboard::cell_text(&self.view, row, col) else {
+            return;
+        };
+        self.status = Some(match crate::clipboard::copy(&text) {
+            Ok(()) => format!(" ✓ Copied cell — {} ", self.headers[col]),
+            Err(e) => format!(" ✗ Clipboard copy failed: {} ", e),
+        });
+    }
+
+    /// Copies the selected row, tab-separated, and reports the result in `status`.
+    pub fn copy_row(&mut self) {
+        let Some(row) = self.state.selected() else {
+            return;
+        };
+        let Some(text) = crate::clipboard::row_text(&self.view, row) else {
+            return;
+        };
+        self.status = Some(match crate::clipboard::copy(&text) {
+            Ok(()) => format!(" ✓ Copied row — {} columns ", self.view.width()),
+            Err(e) => format!(" ✗ Clipboard copy failed: {} ", e),
+        });
     }
 
     pub fn autofit_all_columns(&mut self) {

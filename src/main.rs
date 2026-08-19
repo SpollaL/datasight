@@ -1,5 +1,6 @@
 mod app;
 mod browser;
+mod clipboard;
 mod config;
 mod events;
 mod text_viewer;

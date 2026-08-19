@@ -240,6 +240,18 @@ For histogram, the Y column is binned automatically — no X column selection ne
 |-----|--------|
 | `e` | Toggle stats popup for current column (count, min, max, mean, median) |
 
+### Copy
+
+| Key | Action |
+|-----|--------|
+| `y` | Copy the selected cell to the clipboard |
+| `Y` | Copy the current row to the clipboard, tab-separated |
+
+Copying uses the OSC 52 escape sequence, so the terminal performs the copy — which means
+it also works over SSH. Supported by Windows Terminal, WezTerm, kitty, iTerm2, Alacritty,
+Ghostty and Konsole. GNOME Terminal disables OSC 52 by default, and inside tmux you need
+`set-clipboard on`. Where it is unsupported the sequence is ignored silently.
+
 ### Other
 
 | Key | Action |
