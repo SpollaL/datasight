@@ -243,7 +243,7 @@ impl<'a> FilterQuery<'a> {
         let is_numeric_col = df
             .column(col_name)
             .ok()
-            .and_then(|c| c.as_series())
+            .map(|c| c.as_materialized_series())
             .map(|s| {
                 s.dtype().is_primitive_numeric() || matches!(s.dtype(), DataType::Decimal(_, _))
             })
@@ -376,7 +376,7 @@ impl App {
             .view
             .column(col_name)
             .ok()
-            .and_then(|c| c.as_series())
+            .map(|c| c.as_materialized_series())
             .and_then(|s| s.cast(&DataType::String).ok())
         else {
             self.search.results.clear();
@@ -580,7 +580,7 @@ impl App {
             .column(&self.headers[col_idx])
             .ok()
             .and_then(|col| {
-                let cast = col.as_series()?.cast(&DataType::String).ok()?;
+                let cast = col.as_materialized_series().cast(&DataType::String).ok()?;
                 cast.str()
                     .ok()?
                     .into_iter()
@@ -708,9 +708,9 @@ impl App {
             .ok()
             .map(|s| s.value().to_string())
             .unwrap_or_default();
-        let s = series.as_series();
-        let sum = s.as_ref().and_then(|s| s.sum::<f64>().ok());
-        let (mean, median) = s.map(|s| (s.mean(), s.median())).unwrap_or((None, None));
+        let s = series.as_materialized_series();
+        let sum = s.sum::<f64>().ok();
+        let (mean, median) = (s.mean(), s.median());
         ColumnStats {
             count,
             sum,
@@ -821,7 +821,7 @@ impl App {
                 .view
                 .column(&self.headers[col_idx])
                 .ok()?
-                .as_series()?
+                .as_materialized_series()
                 .clone();
             let str_s = s.cast(&DataType::String).ok()?;
             let ca = str_s.str().ok()?.clone();
@@ -882,7 +882,7 @@ impl App {
                 let dtype = col.dtype().to_string();
                 let count = col.len();
                 let null_count = col.null_count();
-                let unique = col.as_series().and_then(|s| s.n_unique().ok()).unwrap_or(0);
+                let unique = col.as_materialized_series().n_unique().unwrap_or(0);
                 let min = col
                     .min_reduce()
                     .ok()
@@ -893,10 +893,10 @@ impl App {
                     .ok()
                     .map(|s| s.value().to_string())
                     .unwrap_or_default();
-                let s = col.as_series();
-                let sum = s.as_ref().and_then(|s| s.sum::<f64>().ok());
-                let mean = s.as_ref().and_then(|s| s.mean());
-                let median = s.and_then(|s| s.median());
+                let s = col.as_materialized_series();
+                let sum = s.sum::<f64>().ok();
+                let mean = s.mean();
+                let median = s.median();
                 ColumnProfile {
                     name,
                     dtype,

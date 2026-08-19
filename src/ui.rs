@@ -109,7 +109,7 @@ pub fn ui(frame: &mut Frame, app: &mut App, area: Rect) {
         .map(|&i| {
             all_columns
                 .get(i)
-                .and_then(|col| col.as_series())
+                .map(|col| col.as_materialized_series())
                 .and_then(|s| s.cast(&DataType::String).ok())
         })
         .collect();
@@ -1625,7 +1625,7 @@ pub fn compute_histogram_pub(app: &App, y_idx: usize) -> Result<Vec<(f64, f64)>,
 }
 
 fn series_to_f64(col: &polars::prelude::Column) -> Option<polars::prelude::Series> {
-    let s = col.as_series()?;
+    let s = col.as_materialized_series();
     if s.dtype().is_primitive_numeric() || matches!(s.dtype(), DataType::Decimal(_, _)) {
         s.cast(&DataType::Float64).ok()
     } else {
@@ -1642,10 +1642,7 @@ fn collect_all_x_labels(app: &App, x_idx: usize, n_points: usize) -> Vec<String>
         Ok(c) => c,
         Err(_) => return vec![],
     };
-    let s = match col.as_series() {
-        Some(s) => s,
-        None => return vec![],
-    };
+    let s = col.as_materialized_series();
     let str_series = match s.cast(&DataType::String) {
         Ok(s) => s,
         Err(_) => return vec![],
@@ -2073,6 +2070,41 @@ mod null_render_tests {
         }
         // Exactly one null in the data → exactly one ∅ glyph in the buffer.
         assert_eq!(null_cells, 1, "expected one ∅ in the rendered buffer");
+    }
+
+    /// Regression: polars backs any length-1 column with a `Scalar` rather than a
+    /// `Series`, and `Column::as_series()` is a downcast that returns `None` for it.
+    /// The renderer used to treat that `None` as "no data" and paint the whole row
+    /// with the null glyph, so a single-row CSV displayed as ∅ in every cell.
+    #[test]
+    fn test_single_row_frame_renders_values_not_null_glyphs() {
+        let a = Series::new("a".into(), &["hello"]);
+        let b = Series::new("b".into(), &[1i64]);
+        let df = DataFrame::new(vec![a.into(), b.into()]).unwrap();
+        let mut app = App::new(df, "one.csv".to_string(), crate::theme::default_theme());
+
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| ui(frame, &mut app, frame.area()))
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let text: String = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer.cell(Position::new(x, y)).unwrap().symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(text.contains("hello"), "single-row value missing:\n{text}");
+        assert!(text.contains('1'), "single-row value missing:\n{text}");
+        assert!(
+            !text.contains(NULL_GLYPH),
+            "no nulls in the data, so no ∅ should render:\n{text}"
+        );
     }
 
     #[test]
