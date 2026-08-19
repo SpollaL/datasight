@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-08-19
+
+### Added
+- `-` / `+` narrow and widen the selected column by 4 cells.
+
+### Changed
+- `_` now toggles: autofit the selected column, press again to restore the default width.
+
+### Fixed
+- Autofit is bounded by the table pane instead of a fixed 40-character cap, so long values fit fully when there is room for them (#23).
+- Columns backed by a single scalar value rendered every cell as `∅`. Any 1-row file was affected, including straight from the CSV reader.
+- Key release events are now ignored, so Windows terminals no longer handle every keystroke twice.
+- Enabled the `dtype-duration` and `dtype-time` polars features, so files with duration or time columns load instead of erroring.
+
 ## [0.7.0] - 2026-05-18
 
 ### Added
