@@ -17,6 +17,9 @@ FAILURES=()
 
 tmux kill-session -t "$SESSION" 2>/dev/null || true
 tmux new-session -d -s "$SESSION" -x 220 -y 50
+# Suite O asserts on real clipboard content: with set-clipboard on, tmux accepts
+# the app's OSC 52 sequence and stores it in a paste buffer we can read back.
+tmux set-option -g set-clipboard on
 sleep 0.3
 
 # Scratch fixtures generated at run time. These deliberately do NOT live in
@@ -85,6 +88,22 @@ assert_not_contains() {
     echo "  FAIL [$label] — did NOT expect: '$pattern'"
     FAIL=$((FAIL + 1))
     FAILURES+=("[$label] did not expect '$pattern'")
+  fi
+}
+
+# Clipboard helpers. drop_buffers clears tmux's paste-buffer stack so a stale
+# buffer cannot satisfy the next assertion.
+drop_buffers() { while tmux delete-buffer 2>/dev/null; do :; done; }
+
+assert_buffer_contains() {
+  local label="$1" pattern="$2"
+  if tmux show-buffer 2>/dev/null | grep -qF -- "$pattern"; then
+    echo "  PASS [$label]"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL [$label] — clipboard buffer missing: '$pattern'"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("[$label] clipboard buffer missing '$pattern'")
   fi
 }
 
@@ -619,6 +638,56 @@ quit
 start_app "$QA_TMP/single_row.csv"
 assert_contains     "N/single-row-value" "solitary"
 assert_not_contains "N/single-row-not-null" "∅"
+quit
+
+# ── Suite O: Clipboard copy (issue #24) ───────────────────────────────────────
+echo ""
+echo "=== Suite O: Clipboard copy ==="
+
+# O1: y copies the selected cell — confirmed on screen and in tmux's paste buffer.
+start_app "tests/fixtures/orders.csv"
+drop_buffers
+send "y" 0.25
+assert_contains        "O/cell-status"  "Copied cell"
+assert_buffer_contains "O/cell-buffer"  "1001"
+
+# O2: the confirmation lasts exactly one keystroke.
+send "j" 0.20
+assert_not_contains "O/status-transient" "Copied cell"
+
+# O3: Y copies the whole row, tab-separated.
+drop_buffers
+send "Y" 0.25
+assert_contains        "O/row-status" "Copied row"
+assert_buffer_contains "O/row-buffer" "Bob Smith"
+if tmux show-buffer 2>/dev/null | grep -q "$(printf '\t')"; then
+  echo "  PASS [O/row-tab-separated]"
+  PASS=$((PASS + 1))
+else
+  echo "  FAIL [O/row-tab-separated] — no tab in clipboard buffer"
+  FAIL=$((FAIL + 1))
+  FAILURES+=("[O/row-tab-separated] no tab in clipboard buffer")
+fi
+
+# O4: both keys are discoverable in the help popup ("Other" section, two pages down).
+send "?" 0.30
+pgdn
+pgdn
+assert_contains "O/help-cell" "Copy cell to clipboard"
+assert_contains "O/help-row"  "Copy row to clipboard"
+esc
+quit
+
+# O5: copying a null cell copies nothing without panicking, and the app stays live.
+# Row 2 / column total_amount is empty in the null fixture.
+start_app "tests/fixtures/orders_nulls.csv"
+send "j" 0.15
+send "lllllllll" 0.25
+drop_buffers
+send "y" 0.25
+assert_contains "O/null-cell-status" "Copied cell"
+send "k" 0.20
+assert_contains "O/null-cell-app-alive" "order_id"
 quit
 
 # ── Suite X: browse subcommand ────────────────────────────────────────────────

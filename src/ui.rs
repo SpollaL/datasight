@@ -275,6 +275,23 @@ fn render_help_popup(frame: &mut Frame, app: &mut App, theme: &Theme) {
 }
 
 fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
+    if let Some(ref status) = app.status {
+        // '✗' marks a failure; anything else is a confirmation.
+        let fg = if status.contains('✗') {
+            theme.error
+        } else {
+            theme.success
+        };
+        return Line::from(Span::styled(
+            status.clone(),
+            Style::default()
+                .bg(fg)
+                .fg(theme.bg)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().bg(theme.bg_alt));
+    }
+
     // (primary, secondary) — primary keys are highlighted in blue, secondary in grey.
     // Secondary = always-valid base shortcuts not already shown in primary.
     type Shortcuts = &'static [(&'static str, &'static str)];
@@ -359,6 +376,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
                 ("p", "Plot"),
                 ("i", "Inspector"),
                 ("u", "Unique"),
+                ("y", "Copy"),
                 ("?", "Help"),
                 ("q", "Quit"),
             ],
@@ -818,6 +836,8 @@ fn help_text(theme: &Theme) -> Text<'static> {
         key("_", "Autofit column width (again: reset)"),
         key("=", "Autofit all columns"),
         key("-/+", "Narrow / widen current column"),
+        key("y", "Copy cell to clipboard"),
+        key("Y", "Copy row to clipboard (tab-separated)"),
         key("e", "Toggle column stats popup"),
         key("?", "Toggle this help"),
         key("q", "Quit"),

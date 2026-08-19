@@ -37,6 +37,9 @@ pub fn run_app(
 /// All existing mode-specific key handling lives here so both run_app and
 /// the browser event loop can reuse it.
 pub(crate) fn dispatch_viewer_key(app: &mut App, key: &event::KeyEvent) {
+    // Transient messages live for exactly one keystroke.
+    app.status = None;
+
     match app.mode {
         Mode::Normal if app.show_help => match key.code {
             event::KeyCode::Char('j') | event::KeyCode::Down => {
@@ -73,6 +76,8 @@ pub(crate) fn dispatch_viewer_key(app: &mut App, key: &event::KeyEvent) {
             event::KeyCode::PageUp => app.scroll_up_rows(config::PAGE_SCROLL_AMOUNT),
             event::KeyCode::Home => app.select_first_row(),
             event::KeyCode::End => app.select_last_row(),
+            event::KeyCode::Char('y') => app.copy_cell(),
+            event::KeyCode::Char('Y') => app.copy_row(),
             event::KeyCode::Char('_') => autofit_column(app),
             event::KeyCode::Char('-') => app.shrink_selected_column(),
             event::KeyCode::Char('+') => app.grow_selected_column(),
