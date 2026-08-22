@@ -24,9 +24,14 @@ pub fn browser_ui(frame: &mut Frame, app: &mut BrowserApp) {
         render_viewer_pane(frame, app, content_area, theme);
     }
 
-    let bar = match app.download {
-        Some(ref prompt) => crate::browser::download::prompt_line(prompt, theme),
-        None => browser_shortcut_bar(app, theme),
+    // Whichever prompt owns the keyboard owns the bar, so the hints on screen are
+    // the keys that actually do something.
+    let bar = match (&app.download, &app.find) {
+        (Some(prompt), _) => crate::browser::download::prompt_line(prompt, theme),
+        (None, Some(prompt)) => {
+            crate::browser::find::prompt_line(prompt, app.matches.len(), app.entries.len(), theme)
+        }
+        (None, None) => browser_shortcut_bar(app, theme),
     };
     frame.render_widget(Paragraph::new(bar), bar_area);
 
@@ -72,17 +77,28 @@ fn render_browser_pane(frame: &mut Frame, app: &BrowserApp, area: Rect, theme: &
         frame.render_widget(status, sa);
     }
 
+    // An active query with nothing to show would otherwise render as a blank
+    // pane — say why it is empty.
+    if app.matches.is_empty() && app.find.is_some() {
+        let hint = Paragraph::new("No matches")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(theme.fg_muted));
+        frame.render_widget(hint, list_area);
+        return;
+    }
+
     let items: Vec<ListItem> = app
-        .entries
+        .matches
         .iter()
-        .map(|entry| {
+        .map(|m| {
+            let entry = &app.entries[m.index];
             let style = match entry.kind {
                 crate::browser::EntryKind::Dir => Style::default().fg(theme.accent),
                 crate::browser::EntryKind::Data => Style::default().fg(theme.fg),
                 crate::browser::EntryKind::Text => Style::default().fg(theme.fg),
                 crate::browser::EntryKind::Binary => Style::default().fg(theme.fg_dim),
             };
-            ListItem::new(entry.name.clone()).style(style)
+            ListItem::new(highlight(&entry.name, &m.positions, theme)).style(style)
         })
         .collect();
 
@@ -96,6 +112,36 @@ fn render_browser_pane(frame: &mut Frame, app: &BrowserApp, area: Rect, theme: &
     );
 
     frame.render_stateful_widget(list, list_area, &mut list_state);
+}
+
+/// Split `name` so the chars the query matched stand out from the rest.
+///
+/// `positions` are char indices, so the name is walked by chars: slicing by byte
+/// offset would cut a multi-byte name mid-character. Spans carry no color of
+/// their own except on a hit, leaving the list item's kind color to show through.
+fn highlight<'a>(name: &str, positions: &[usize], theme: &Theme) -> Line<'a> {
+    if positions.is_empty() {
+        return Line::from(name.to_string());
+    }
+    let hit = Style::default().fg(theme.warn).add_modifier(Modifier::BOLD);
+
+    let mut spans = Vec::new();
+    let mut run = String::new();
+    let mut run_is_hit = false;
+    for (i, c) in name.chars().enumerate() {
+        // Query length is a handful of chars, so a scan beats a set.
+        let is_hit = positions.contains(&i);
+        if is_hit != run_is_hit && !run.is_empty() {
+            let style = if run_is_hit { hit } else { Style::default() };
+            spans.push(Span::styled(std::mem::take(&mut run), style));
+        }
+        run_is_hit = is_hit;
+        run.push(c);
+    }
+    let style = if run_is_hit { hit } else { Style::default() };
+    spans.push(Span::styled(run, style));
+
+    Line::from(spans)
 }
 
 fn render_viewer_pane(frame: &mut Frame, app: &mut BrowserApp, area: Rect, theme: &Theme) {
@@ -120,12 +166,13 @@ fn browser_shortcut_bar<'a>(app: &BrowserApp, theme: &Theme) -> Line<'a> {
     let keys: Vec<(&str, &str)> = if !app.browser_visible {
         vec![("ctrl-e", "Show browser")]
     } else if app.focus == Focus::Viewer {
-        vec![("tab", "Browser"), ("ctrl-e", "Hide")]
+        vec![("tab", "Browser"), ("ctrl-e", "Hide"), ("q", "Quit")]
     } else {
         let mut keys = vec![
             ("j / k", "Navigate"),
             (". / Enter", "Open"),
             ("Esc", "Up"),
+            ("/", "Find"),
             ("ctrl-e", "Hide"),
             ("tab", "Viewer"),
         ];
@@ -134,9 +181,7 @@ fn browser_shortcut_bar<'a>(app: &BrowserApp, theme: &Theme) -> Line<'a> {
         if crate::browser::is_remote(&app.cwd) {
             keys.push(("d", "Download"));
         }
-        if app.viewer.is_none() {
-            keys.push(("q", "Quit"));
-        }
+        keys.push(("q", "Quit"));
         keys
     };
 
@@ -266,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn test_shortcut_bar_browser_focused_with_viewer_no_quit() {
+    fn test_shortcut_bar_offers_quit_with_a_viewer_loaded() {
         use polars::prelude::*;
         let df = df!("col" => &[1i64]).unwrap();
         let viewer =
@@ -275,10 +320,58 @@ mod tests {
         app.viewer = Some(Viewer::DataFrame(Box::new(viewer)));
         let text = bar_text(&app);
         assert!(text.contains("j / k"), "expected 'j / k' in: {}", text);
+        // `q` used to be swallowed once a file was open, leaving the browser pane
+        // with no way out at all.
         assert!(
-            !text.contains("Quit"),
-            "expected no 'Quit' when viewer loaded, got: {}",
+            text.contains("Quit"),
+            "expected 'Quit' with a viewer loaded, got: {}",
             text
         );
+    }
+
+    #[test]
+    fn test_shortcut_bar_offers_find() {
+        let text = bar_text(&make_app());
+        assert!(text.contains("Find"), "expected 'Find' in: {}", text);
+    }
+
+    #[test]
+    fn test_shortcut_bar_viewer_focused_offers_quit() {
+        let mut app = make_app();
+        app.focus = crate::browser::app::Focus::Viewer;
+        let text = bar_text(&app);
+        assert!(text.contains("Quit"), "expected 'Quit' in: {}", text);
+    }
+
+    // ── highlight ─────────────────────────────────────────────────────────────
+
+    fn highlighted(name: &str, positions: &[usize]) -> Vec<String> {
+        highlight(name, positions, crate::theme::default_theme())
+            .spans
+            .iter()
+            .map(|s| s.content.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn test_highlight_without_positions_is_one_span() {
+        assert_eq!(highlighted("orders.csv", &[]), vec!["orders.csv"]);
+    }
+
+    #[test]
+    fn test_highlight_splits_runs_around_the_matches() {
+        // "or" then "d" plain, "e" hit, rest plain.
+        assert_eq!(
+            highlighted("orders.csv", &[0, 1, 4]),
+            vec!["or", "de", "r", "s.csv"]
+        );
+    }
+
+    #[test]
+    fn test_highlight_reassembles_the_original_name() {
+        // Char-indexed positions on a multi-byte name: the spans must still join
+        // back into exactly what the backend listed.
+        let joined = highlighted("héllo.csv", &[1, 2]).concat();
+        assert_eq!(joined, "héllo.csv");
     }
 }

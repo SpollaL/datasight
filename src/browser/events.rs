@@ -30,6 +30,14 @@ pub fn run_browser_app(
                 continue;
             }
 
+            // So does an open find prompt, and for the same reason: the query is
+            // free text, so `q`, `d` and `T` have to reach it as characters
+            // rather than as the browse bindings they would otherwise be.
+            if app.find.is_some() {
+                handle_find_key(&mut app, &key);
+                continue;
+            }
+
             // Theme picker takes precedence over all other browse-mode keys.
             if app.picker.is_some() {
                 if let Some(picker) = app.picker.as_mut() {
@@ -129,7 +137,39 @@ fn handle_browser_key(app: &mut BrowserApp, key: &event::KeyEvent) {
         event::KeyCode::Esc => app.ascend(),
         event::KeyCode::Char('.') | event::KeyCode::Enter => open_or_descend(app),
         event::KeyCode::Char('d') => app.begin_download(),
-        event::KeyCode::Char('q') if app.viewer.is_none() => app.should_quit = true,
+        event::KeyCode::Char('/') => app.open_find(),
+        event::KeyCode::Char('q') => app.should_quit = true,
+        _ => {}
+    }
+}
+
+/// Keys for the find prompt. `j`/`k` are query text here, so the list is walked
+/// with the arrows or the readline chords instead.
+fn handle_find_key(app: &mut BrowserApp, key: &event::KeyEvent) {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    match key.code {
+        event::KeyCode::Enter => {
+            // Restore the full listing first: it leaves the cursor on the entry
+            // that was highlighted, so opening it is the ordinary unfiltered path.
+            app.close_find();
+            open_or_descend(app);
+        }
+        event::KeyCode::Esc => app.close_find(),
+        event::KeyCode::Backspace => app.find_backspace(),
+        event::KeyCode::Down => app.navigate_down(),
+        event::KeyCode::Up => app.navigate_up(),
+        event::KeyCode::Char('n') if ctrl => app.navigate_down(),
+        event::KeyCode::Char('p') if ctrl => app.navigate_up(),
+        event::KeyCode::Char('u') if ctrl => app.find_clear(),
+        // Chords are commands, not text: without this guard ctrl-e would type an
+        // 'e' into the query instead of being ignored.
+        event::KeyCode::Char(c)
+            if !key
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+        {
+            app.find_push(c)
+        }
         _ => {}
     }
 }
@@ -159,7 +199,7 @@ fn handle_download_key(app: &mut BrowserApp, key: &event::KeyEvent) {
 }
 
 fn open_or_descend(app: &mut BrowserApp) {
-    let entry = match app.entries.get(app.cursor) {
+    let entry = match app.selected_entry() {
         Some(e) => e.clone(),
         None => return,
     };
@@ -276,6 +316,181 @@ mod tests {
         press(&mut app, event::KeyCode::Backspace, KeyModifiers::NONE);
         press(&mut app, event::KeyCode::Char('X'), KeyModifiers::SHIFT);
         assert_eq!(app.download.expect("prompt still open").input, "sales.csX");
+    }
+
+    // ── fuzzy find ────────────────────────────────────────────────────────────
+
+    struct ListBackend {
+        entries: Vec<Entry>,
+    }
+
+    impl FileBrowser for ListBackend {
+        fn list(&self, _prefix: &str) -> Result<Vec<Entry>, BrowserError> {
+            Ok(self.entries.clone())
+        }
+    }
+
+    fn entry(name: &str) -> Entry {
+        Entry {
+            kind: crate::browser::classify(name),
+            name: name.to_string(),
+            path: format!("/test/{}", name),
+        }
+    }
+
+    fn app_with_listing(entries: Vec<Entry>) -> BrowserApp {
+        BrowserApp::new(
+            Box::new(ListBackend { entries }),
+            "/test".to_string(),
+            crate::theme::default_theme(),
+        )
+    }
+
+    fn listing() -> BrowserApp {
+        app_with_listing(vec![
+            entry("orders.csv"),
+            entry("sales.parquet"),
+            entry("notes.txt"),
+        ])
+    }
+
+    fn browser_key(app: &mut BrowserApp, code: event::KeyCode) {
+        handle_browser_key(app, &event::KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    fn find_key(app: &mut BrowserApp, code: event::KeyCode, modifiers: KeyModifiers) {
+        handle_find_key(app, &event::KeyEvent::new(code, modifiers));
+    }
+
+    fn type_into_find(app: &mut BrowserApp, query: &str) {
+        for c in query.chars() {
+            find_key(app, event::KeyCode::Char(c), KeyModifiers::NONE);
+        }
+    }
+
+    #[test]
+    fn slash_opens_the_find_prompt() {
+        let mut app = listing();
+        browser_key(&mut app, event::KeyCode::Char('/'));
+        assert!(app.find.is_some());
+    }
+
+    #[test]
+    fn find_prompt_narrows_the_listing_as_it_is_typed() {
+        let mut app = listing();
+        app.open_find();
+        type_into_find(&mut app, "sal");
+        assert_eq!(app.find.as_ref().unwrap().query, "sal");
+        assert_eq!(app.selected_entry().unwrap().name, "sales.parquet");
+    }
+
+    #[test]
+    fn find_prompt_swallows_the_browse_bindings_as_text() {
+        // `q`, `d` and `T` are all live keys in the browser pane. Inside the
+        // prompt they are characters, or a query could never contain them.
+        let mut app = listing();
+        app.open_find();
+        type_into_find(&mut app, "qdT");
+        assert_eq!(app.find.as_ref().unwrap().query, "qdT");
+        assert!(!app.should_quit, "q must not quit while typing a query");
+        assert!(
+            app.download.is_none(),
+            "d must not open the download prompt"
+        );
+    }
+
+    #[test]
+    fn find_prompt_ignores_control_and_alt_chords() {
+        let mut app = listing();
+        app.open_find();
+        for modifiers in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+            for c in ['e', 'c', 'q'] {
+                find_key(&mut app, event::KeyCode::Char(c), modifiers);
+            }
+        }
+        assert_eq!(
+            app.find.as_ref().unwrap().query,
+            "",
+            "a chord is a command, not query text"
+        );
+    }
+
+    #[test]
+    fn ctrl_u_clears_the_query() {
+        let mut app = listing();
+        app.open_find();
+        type_into_find(&mut app, "sal");
+        find_key(&mut app, event::KeyCode::Char('u'), KeyModifiers::CONTROL);
+        assert_eq!(app.find.as_ref().unwrap().query, "");
+        assert_eq!(app.matches.len(), 3);
+    }
+
+    #[test]
+    fn arrows_and_readline_chords_walk_the_matches() {
+        let mut app = listing();
+        app.open_find();
+        // 's' matches all three names; j/k would be query text, so movement has to
+        // come from somewhere else.
+        type_into_find(&mut app, "s");
+        find_key(&mut app, event::KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.cursor, 1);
+        find_key(&mut app, event::KeyCode::Char('n'), KeyModifiers::CONTROL);
+        assert_eq!(app.cursor, 2);
+        find_key(&mut app, event::KeyCode::Char('p'), KeyModifiers::CONTROL);
+        assert_eq!(app.cursor, 1);
+        find_key(&mut app, event::KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(app.cursor, 0);
+    }
+
+    #[test]
+    fn esc_closes_the_prompt_and_restores_the_listing() {
+        let mut app = listing();
+        app.open_find();
+        type_into_find(&mut app, "sal");
+        find_key(&mut app, event::KeyCode::Esc, KeyModifiers::NONE);
+        assert!(app.find.is_none());
+        assert_eq!(app.matches.len(), 3);
+    }
+
+    #[test]
+    fn enter_opens_the_highlighted_match() {
+        let mut app = app_with_listing(vec![
+            entry("orders.csv"),
+            Entry {
+                name: "reports".to_string(),
+                path: "/test/reports".to_string(),
+                kind: crate::browser::EntryKind::Dir,
+            },
+        ]);
+        app.open_find();
+        type_into_find(&mut app, "rep");
+        find_key(&mut app, event::KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.cwd, "/test/reports", "Enter acts on the filtered entry");
+        assert!(app.find.is_none());
+    }
+
+    // ── quit ──────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn q_quits_the_browser_pane() {
+        let mut app = listing();
+        browser_key(&mut app, event::KeyCode::Char('q'));
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn q_quits_with_a_file_already_open() {
+        // The reported bug: `q` was guarded on `viewer.is_none()`, so opening a
+        // file left the browser pane with no way out.
+        use polars::prelude::*;
+        let mut app = listing();
+        app.viewer = Some(Viewer::DataFrame(Box::new(crate::app::App::new(
+            df!("col" => &[1i64]).unwrap(),
+            "test.csv".to_string(),
+            crate::theme::default_theme(),
+        ))));
+        browser_key(&mut app, event::KeyCode::Char('q'));
+        assert!(app.should_quit);
     }
 
     #[test]
