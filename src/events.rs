@@ -117,6 +117,7 @@ pub(crate) fn dispatch_viewer_key(app: &mut App, key: &event::KeyEvent) {
                 app.build_unique_values();
                 app.mode = Mode::UniqueValues;
             }
+            event::KeyCode::Char('w') => enter_export_mode(app),
             event::KeyCode::Char('T') => {
                 app.picker = Some(crate::theme_picker::ThemePicker::open(app.theme));
                 app.mode = Mode::ThemePicker;
@@ -334,7 +335,29 @@ pub(crate) fn dispatch_viewer_key(app: &mut App, key: &event::KeyEvent) {
             event::KeyCode::Esc => from_filter_to_normal_mode(app),
             _ => {}
         },
+        Mode::Export => match key.code {
+            event::KeyCode::Backspace => {
+                app.export_path.pop();
+            }
+            // A blank path has nothing to resolve, so Enter stays in the prompt.
+            event::KeyCode::Enter if !app.export_path.trim().is_empty() => {
+                let path = std::mem::take(&mut app.export_path);
+                app.export_view(&path);
+                app.mode = Mode::Normal;
+            }
+            event::KeyCode::Char(c) => app.export_path.push(c),
+            event::KeyCode::Esc => {
+                app.export_path.clear();
+                app.mode = Mode::Normal;
+            }
+            _ => {}
+        },
     }
+}
+
+fn enter_export_mode(app: &mut App) {
+    app.mode = Mode::Export;
+    app.export_path = crate::export::default_filename(&app.file_path);
 }
 
 fn autofit_column(app: &mut App) {

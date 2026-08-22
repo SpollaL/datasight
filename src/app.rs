@@ -41,6 +41,7 @@ pub enum Mode {
     ColumnsView,
     UniqueValues,
     ThemePicker,
+    Export,
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -176,6 +177,9 @@ pub struct App {
     /// Transient one-line message shown in place of the shortcut bar.
     /// Cleared by [`crate::events::dispatch_viewer_key`] on the next keystroke.
     pub status: Option<String>,
+    /// Destination typed in [`Mode::Export`]. A bare `String` rather than a state
+    /// sub-struct: the mode has exactly one piece of state.
+    pub export_path: String,
 }
 
 /// Strips a leading comparison operator from `query`.
@@ -363,6 +367,7 @@ impl App {
             theme,
             picker: None,
             status: None,
+            export_path: String::new(),
         };
         if !app.df.is_empty() {
             app.state.select(Some(0));
@@ -723,6 +728,23 @@ impl App {
         });
     }
 
+    /// Writes the current view to `path` as CSV and reports the result in `status`.
+    ///
+    /// Exports `view` — the filtered, sorted and grouped DataFrame — so the file
+    /// matches what is on screen. Nulls are written by Polars as empty fields: the
+    /// `∅` display glyph and the `(null)` filter sentinel are rendering concerns and
+    /// never reach the file.
+    pub fn export_view(&mut self, path: &str) {
+        let Some(path) = crate::export::resolve_path(path) else {
+            return;
+        };
+        let rows = self.view.height();
+        self.status = Some(match crate::export::write_csv(&mut self.view, &path) {
+            Ok(()) => format!(" ✓ Wrote {} rows → {} ", rows, path.display()),
+            Err(e) => format!(" ✗ Export failed: {} ", e),
+        });
+    }
+
     pub fn autofit_all_columns(&mut self) {
         for col_idx in 0..self.headers.len() {
             self.column_widths[col_idx] = self.compute_column_width(col_idx);
@@ -1018,7 +1040,7 @@ impl App {
 
     pub fn is_typing(&self) -> bool {
         match self.mode {
-            Mode::Search | Mode::Filter => true,
+            Mode::Search | Mode::Filter | Mode::Export => true,
             Mode::ColumnsView => self.columns_view.searching,
             Mode::UniqueValues => self.unique_values.searching,
             _ => false,
