@@ -79,10 +79,10 @@ pub fn resolve_dest(input: &str, source: &str) -> Option<PathBuf> {
 fn expand_tilde(input: &str) -> PathBuf {
     match input
         .strip_prefix('~')
-        .filter(|rest| rest.is_empty() || rest.starts_with('/'))
+        .filter(|rest| rest.is_empty() || rest.starts_with(std::path::is_separator))
         .zip(dirs::home_dir())
     {
-        Some((rest, home)) => home.join(rest.trim_start_matches('/')),
+        Some((rest, home)) => home.join(rest.trim_start_matches(std::path::is_separator)),
         None => PathBuf::from(input),
     }
 }
@@ -99,6 +99,11 @@ pub fn download_to(backend: &dyn FileBrowser, source: &str, dest: &Path) -> Resu
         return Err("destination must be a local path".to_string());
     }
     let bytes = backend.download_bytes(source).map_err(|e| e.to_string())?;
+    // `resolve_dest` accepts a directory that does not exist yet, so make it here —
+    // after the fetch, so a download that fails leaves no empty directory behind.
+    if let Some(parent) = dest.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
     std::fs::write(dest, &bytes).map_err(|e| e.to_string())?;
     Ok(bytes.len() as u64)
 }
@@ -232,6 +237,21 @@ mod tests {
         assert_eq!(expand_tilde("./out.csv"), PathBuf::from("./out.csv"));
     }
 
+    // Both separators count on Windows, only `/` elsewhere — a backslash is a legal
+    // character in a Unix file name, so expanding it there would be wrong.
+    #[test]
+    #[cfg(windows)]
+    fn expand_tilde_accepts_a_backslash_on_windows() {
+        let home = dirs::home_dir().expect("invariant: tests run with a home directory");
+        assert_eq!(expand_tilde(r"~\out.csv"), home.join("out.csv"));
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn expand_tilde_keeps_a_backslash_literal_on_unix() {
+        assert_eq!(expand_tilde(r"~\out.csv"), PathBuf::from(r"~\out.csv"));
+    }
+
     #[test]
     fn human_size_scales_the_unit() {
         assert_eq!(human_size(0), "0 B");
@@ -278,6 +298,30 @@ mod tests {
         let written = download_to(&backend, "az://c/sales.csv", &dest).unwrap();
         assert_eq!(written, 8);
         assert_eq!(std::fs::read(&dest).unwrap(), b"a,b\n1,2\n");
+    }
+
+    #[test]
+    fn download_to_creates_a_missing_parent_directory() {
+        // `resolve_dest` promises a trailing slash is enough to name a directory,
+        // so the write must not fail just because it isn't there yet.
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("exports").join("sales.csv");
+        let backend = StubBackend {
+            bytes: b"a,b\n".to_vec(),
+        };
+        download_to(&backend, "az://c/sales.csv", &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"a,b\n");
+    }
+
+    #[test]
+    fn download_to_leaves_no_directory_behind_when_the_fetch_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("exports").join("sales.csv");
+        download_to(&FailingBackend, "az://c/gone.csv", &dest).unwrap_err();
+        assert!(
+            !dir.path().join("exports").exists(),
+            "a failed download should not create the directory"
+        );
     }
 
     #[test]
