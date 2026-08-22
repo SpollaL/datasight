@@ -130,16 +130,33 @@ pub fn human_size(bytes: u64) -> String {
 pub fn prompt_line(prompt: &DownloadPrompt, theme: &Theme) -> Line<'static> {
     // Resolving each frame stats the destination once per keystroke, which is free at
     // typing speed and puts the overwrite warning where the decision is made.
+    //
+    // The prompt takes over the shortcut bar, so it has to carry its own key hints the
+    // way the theme picker footer does — Esc is the only way out, and with the bar
+    // gone nothing else on screen would say so.
     let (text, bg) = match resolve_dest(&prompt.input, &prompt.source) {
         Some(dest) if dest.exists() => (
-            format!(" d {}_ → {} — ⚠ overwrites ", prompt.input, dest.display()),
+            format!(
+                " d {}_ → {} — ⚠ overwrites   Enter overwrite · Esc cancel ",
+                prompt.input,
+                dest.display()
+            ),
             theme.warn,
         ),
         Some(dest) => (
-            format!(" d {}_ → {} ", prompt.input, dest.display()),
+            format!(
+                " d {}_ → {}   Enter save · Esc cancel ",
+                prompt.input,
+                dest.display()
+            ),
             theme.info,
         ),
-        None => (" d _ (type a destination) ".to_string(), theme.info),
+        // A blank destination has nothing to resolve and Enter is a no-op there, so
+        // only the exit is worth offering.
+        None => (
+            " d _ (type a destination)   Esc cancel ".to_string(),
+            theme.info,
+        ),
     };
     Line::from(Span::styled(
         text,
@@ -340,5 +357,59 @@ mod tests {
         let err = download_to(&FailingBackend, "az://c/gone.csv", &dest).unwrap_err();
         assert!(err.contains("no such blob"), "unexpected error: {}", err);
         assert!(!dest.exists(), "no file should be created on failure");
+    }
+
+    // ── prompt hints ──────────────────────────────────────────────────────────
+    // The prompt replaces the shortcut bar, so the keys that dismiss it have to be
+    // on it. Assert the wording, not just that something rendered.
+
+    fn prompt_text(prompt: &DownloadPrompt) -> String {
+        prompt_line(prompt, crate::theme::default_theme())
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect()
+    }
+
+    #[test]
+    fn prompt_line_offers_save_and_cancel() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut prompt = DownloadPrompt::open("az://c/data/sales.csv");
+        prompt.input = dir.path().join("fresh.csv").display().to_string();
+        let text = prompt_text(&prompt);
+        assert!(text.contains("Enter save"), "missing save hint: {}", text);
+        assert!(text.contains("Esc cancel"), "missing cancel hint: {}", text);
+    }
+
+    #[test]
+    fn prompt_line_says_overwrite_when_the_destination_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("sales.csv");
+        std::fs::write(&dest, b"old").unwrap();
+        let mut prompt = DownloadPrompt::open("az://c/data/sales.csv");
+        prompt.input = dest.display().to_string();
+        let text = prompt_text(&prompt);
+        assert!(text.contains("⚠ overwrites"), "missing warning: {}", text);
+        assert!(
+            text.contains("Enter overwrite"),
+            "Enter should name the consequence: {}",
+            text
+        );
+        assert!(text.contains("Esc cancel"), "missing cancel hint: {}", text);
+    }
+
+    #[test]
+    fn prompt_line_offers_only_the_exit_while_blank() {
+        let mut prompt = DownloadPrompt::open("az://c/data/sales.csv");
+        prompt.input.clear();
+        let text = prompt_text(&prompt);
+        assert!(text.contains("Esc cancel"), "missing cancel hint: {}", text);
+        // Enter is a no-op on a blank input; offering it would promise a save that
+        // silently does not happen.
+        assert!(
+            !text.contains("Enter"),
+            "Enter should not be offered: {}",
+            text
+        );
     }
 }

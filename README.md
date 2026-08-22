@@ -115,8 +115,8 @@ Azure reads `AZURE_STORAGE_CONNECTION_STRING` or individual `AZURE_STORAGE_ACCOU
 `d` prompts for a destination, pre-filled with the remote file name. `~` expands to
 your home directory, and a destination ending in `/` (or an existing directory) keeps
 the remote name — so `~/Downloads/` saves `sales.csv` as `~/Downloads/sales.csv`. The
-prompt shows the resolved path, and warns before overwriting an existing file. Missing
-directories in the destination are created for you.
+prompt shows the resolved path and warns before overwriting an existing file; `Enter`
+saves, `Esc` cancels. Missing directories in the destination are created for you.
 
 ## Themes
 
