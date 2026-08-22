@@ -23,6 +23,13 @@ pub fn run_browser_app(
             }
             let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
 
+            // A pending download owns the keyboard: the destination is free text, so
+            // it has to be consumed before any single-key binding sees it.
+            if app.download.is_some() {
+                handle_download_key(&mut app, &key);
+                continue;
+            }
+
             // Theme picker takes precedence over all other browse-mode keys.
             if app.picker.is_some() {
                 if let Some(picker) = app.picker.as_mut() {
@@ -121,7 +128,32 @@ fn handle_browser_key(app: &mut BrowserApp, key: &event::KeyEvent) {
         event::KeyCode::Char('k') | event::KeyCode::Up => app.navigate_up(),
         event::KeyCode::Esc => app.ascend(),
         event::KeyCode::Char('.') | event::KeyCode::Enter => open_or_descend(app),
+        event::KeyCode::Char('d') => app.begin_download(),
         event::KeyCode::Char('q') if app.viewer.is_none() => app.should_quit = true,
+        _ => {}
+    }
+}
+
+fn handle_download_key(app: &mut BrowserApp, key: &event::KeyEvent) {
+    match key.code {
+        event::KeyCode::Enter => app.confirm_download(),
+        event::KeyCode::Esc => app.download = None,
+        event::KeyCode::Backspace => {
+            if let Some(prompt) = app.download.as_mut() {
+                prompt.input.pop();
+            }
+        }
+        // Chords are not text: without this guard ctrl-e would append an 'e' to the
+        // path instead of toggling the sidebar, and ctrl-c a 'c' instead of aborting.
+        event::KeyCode::Char(c)
+            if !key
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+        {
+            if let Some(prompt) = app.download.as_mut() {
+                prompt.input.push(c);
+            }
+        }
         _ => {}
     }
 }
@@ -207,5 +239,54 @@ fn open_as_text(app: &mut BrowserApp, path: &str, name: &str) {
         Err(TextLoadError::Io(e)) => {
             app.status = Some(format!("Error loading file: {}", e));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::browser::download::DownloadPrompt;
+    use crate::browser::{BrowserError, Entry};
+
+    struct StubBackend;
+
+    impl FileBrowser for StubBackend {
+        fn list(&self, _prefix: &str) -> Result<Vec<Entry>, BrowserError> {
+            Ok(vec![])
+        }
+    }
+
+    fn app_with_prompt() -> BrowserApp {
+        let mut app = BrowserApp::new(
+            Box::new(StubBackend),
+            "az://c/data/".to_string(),
+            crate::theme::default_theme(),
+        );
+        app.download = Some(DownloadPrompt::open("az://c/data/sales.csv"));
+        app
+    }
+
+    fn press(app: &mut BrowserApp, code: event::KeyCode, modifiers: KeyModifiers) {
+        handle_download_key(app, &event::KeyEvent::new(code, modifiers));
+    }
+
+    #[test]
+    fn download_prompt_edits_the_destination_with_plain_keys() {
+        let mut app = app_with_prompt();
+        press(&mut app, event::KeyCode::Backspace, KeyModifiers::NONE);
+        press(&mut app, event::KeyCode::Char('X'), KeyModifiers::SHIFT);
+        assert_eq!(app.download.expect("prompt still open").input, "sales.csX");
+    }
+
+    #[test]
+    fn download_prompt_ignores_control_and_alt_chords() {
+        let mut app = app_with_prompt();
+        for modifiers in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+            for c in ['e', 'c', 'q'] {
+                press(&mut app, event::KeyCode::Char(c), modifiers);
+            }
+        }
+        // A chord is a command, not text — ctrl-e must not land an 'e' in the path.
+        assert_eq!(app.download.expect("prompt still open").input, "sales.csv");
     }
 }

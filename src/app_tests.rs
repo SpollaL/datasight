@@ -1557,8 +1557,11 @@ mod export_tests {
     fn export_reports_a_failure_in_the_status_line() {
         let dir = TempDir::new().unwrap();
         let mut app = make_app();
-        let missing = dir.path().join("no").join("such").join("dir").join("o.csv");
-        app.export_view(missing.to_str().unwrap());
+        // A missing directory is no longer a failure — export creates it now — so
+        // block the write with a regular file where a directory would have to go.
+        let blocker = dir.path().join("notadir");
+        std::fs::write(&blocker, "x").unwrap();
+        app.export_view(blocker.join("o.csv").to_str().unwrap());
         let status = app.status.as_deref().unwrap_or("");
         assert!(status.contains('✗'), "expected a failure, got: {}", status);
     }

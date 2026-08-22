@@ -24,7 +24,11 @@ pub fn browser_ui(frame: &mut Frame, app: &mut BrowserApp) {
         render_viewer_pane(frame, app, content_area, theme);
     }
 
-    frame.render_widget(Paragraph::new(browser_shortcut_bar(app, theme)), bar_area);
+    let bar = match app.download {
+        Some(ref prompt) => crate::browser::download::prompt_line(prompt, theme),
+        None => browser_shortcut_bar(app, theme),
+    };
+    frame.render_widget(Paragraph::new(bar), bar_area);
 
     if let Some(ref picker) = app.picker {
         crate::theme_picker::render_picker(frame, frame.area(), picker, app.theme);
@@ -58,7 +62,13 @@ fn render_browser_pane(frame: &mut Frame, app: &BrowserApp, area: Rect, theme: &
     };
 
     if let (Some(msg), Some(sa)) = (&app.status, status_area) {
-        let status = Paragraph::new(msg.as_str()).style(Style::default().fg(theme.error));
+        // '✓' marks a confirmation; every other message reports something refused.
+        let fg = if msg.contains('✓') {
+            theme.success
+        } else {
+            theme.error
+        };
+        let status = Paragraph::new(msg.as_str()).style(Style::default().fg(fg));
         frame.render_widget(status, sa);
     }
 
@@ -107,29 +117,27 @@ fn render_viewer_pane(frame: &mut Frame, app: &mut BrowserApp, area: Rect, theme
 }
 
 fn browser_shortcut_bar<'a>(app: &BrowserApp, theme: &Theme) -> Line<'a> {
-    type Shortcuts = &'static [(&'static str, &'static str)];
-
-    let keys: Shortcuts = if !app.browser_visible {
-        &[("ctrl-e", "Show browser")]
+    let keys: Vec<(&str, &str)> = if !app.browser_visible {
+        vec![("ctrl-e", "Show browser")]
     } else if app.focus == Focus::Viewer {
-        &[("tab", "Browser"), ("ctrl-e", "Hide")]
-    } else if app.viewer.is_none() {
-        &[
-            ("j / k", "Navigate"),
-            (". / Enter", "Open"),
-            ("Esc", "Up"),
-            ("ctrl-e", "Hide"),
-            ("tab", "Viewer"),
-            ("q", "Quit"),
-        ]
+        vec![("tab", "Browser"), ("ctrl-e", "Hide")]
     } else {
-        &[
+        let mut keys = vec![
             ("j / k", "Navigate"),
             (". / Enter", "Open"),
             ("Esc", "Up"),
             ("ctrl-e", "Hide"),
             ("tab", "Viewer"),
-        ]
+        ];
+        // Downloading is offered only where it means something: a local listing is
+        // already on disk.
+        if crate::browser::is_remote(&app.cwd) {
+            keys.push(("d", "Download"));
+        }
+        if app.viewer.is_none() {
+            keys.push(("q", "Quit"));
+        }
+        keys
     };
 
     let key_style = Style::default()

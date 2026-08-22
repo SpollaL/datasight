@@ -1,4 +1,5 @@
 pub mod app;
+pub mod download;
 pub mod events;
 pub mod local;
 pub mod ui;
@@ -106,6 +107,11 @@ pub fn classify(name: &str) -> EntryKind {
     }
 }
 
+/// Whether `path` is a cloud URI rather than a local filesystem path.
+pub fn is_remote(path: &str) -> bool {
+    path.starts_with("az://") || path.starts_with("s3://")
+}
+
 /// Detect the URI scheme and construct the appropriate backend.
 /// Returns (backend, resolved_root_path).
 pub fn build_backend(path: &str) -> Result<(Box<dyn FileBrowser>, String), String> {
@@ -143,7 +149,7 @@ pub(crate) fn load_file_for_browser(
     path: &str,
     backend: &dyn FileBrowser,
 ) -> Result<(polars::prelude::DataFrame, String), Box<dyn std::error::Error>> {
-    if path.starts_with("az://") || path.starts_with("s3://") {
+    if is_remote(path) {
         let bytes = backend.download_bytes(path).map_err(|e| e.to_string())?;
         let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
         let df = if ext == "parquet" {

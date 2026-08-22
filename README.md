@@ -26,7 +26,7 @@
 - Custom delimiter support via `-d` flag — works with pipe-separated, semicolon-separated, and any single-character delimiter
 - Pipe-friendly — reads from stdin with automatic format detection (CSV, JSON, NDJSON)
 - Viewport-windowed rendering — stays fast on large files
-- File browser (`browse`) — navigate local directories and Azure Blob / S3 buckets, open files directly into the viewer
+- File browser (`browse`) — navigate local directories and Azure Blob / S3 buckets, open files directly into the viewer, download cloud objects locally (`d`)
 
 ## Install
 
@@ -109,8 +109,16 @@ Azure reads `AZURE_STORAGE_CONNECTION_STRING` or individual `AZURE_STORAGE_ACCOU
 | `Esc` | Go up to parent |
 | `Tab` | Switch focus browser ↔ viewer |
 | `ctrl-e` | Toggle browser sidebar |
+| `d` | Download the selected cloud file locally (`az://` / `s3://` only) |
 | `T` | Open theme picker |
 | `q` | Quit (when no file is open) |
+
+`d` prompts for a destination, pre-filled with the remote file name. `~` expands to
+your home directory, and a destination ending in `/` (or an existing directory) keeps
+the remote name — so `~/Downloads/` saves `sales.csv` as `~/Downloads/sales.csv`. The
+prompt shows the resolved path and warns before overwriting an existing file; `Enter`
+saves, `Esc` cancels. Missing directories in the destination are created for you.
+
 ## Themes
 
 datasight ships with 9 Base16 color themes:
@@ -275,8 +283,8 @@ original file. Null values are written as empty fields: the `∅` shown on scree
 A warning appears in the prompt before an existing file is overwritten, and the write
 goes to a temporary file that is renamed into place only on success — so a failed export
 (a column CSV cannot represent, a full disk) leaves the existing file untouched.
-Directories are never created for you: exporting into a path whose parent does not exist
-fails without writing anything.
+Missing directories in the destination are created for you, the same as `d` in the file
+browser.
 
 Exports are always local. Viewing a file from `browse az://…` or `s3://…` suggests a local
 name from the basename (`az://container/data/orders.parquet` → `orders.export.csv`) and
@@ -321,11 +329,6 @@ These operators only work on numeric columns. Use `= value` or `!= value` for ex
 **The unique values popup shows fewer results than expected**
 
 The popup is capped at the 500 most frequent values. If your column has more than 500 distinct values, the title will say `[top 500]`.
-
-**Export fails with "No such file or directory"**
-
-The parent directory has to exist already — export never creates directories. Check the
-path you typed, or create the directory first.
 
 **Large files are slow to open**
 
