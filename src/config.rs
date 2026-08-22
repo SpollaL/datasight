@@ -1,4 +1,4 @@
-//! Application-wide numeric constants.
+//! Application-wide constants.
 //!
 //! Centralising magic numbers here makes tuning straightforward and keeps the
 //! constants discoverable in one place.
@@ -17,3 +17,8 @@ pub const MAX_UNIQUE: usize = 500;
 /// Files larger than this are read up to this point and shown with a
 /// "truncated, X MB total" banner — nothing beyond the cap is read.
 pub const MAX_TEXT_BYTES: usize = 10 * 1024 * 1024;
+
+/// Placeholder shown in place of a file path when the DataFrame came from stdin.
+/// `crate::export` special-cases it so the suggested export name stays a legal,
+/// pleasant filename.
+pub const STDIN_LABEL: &str = "<stdin>";

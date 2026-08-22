@@ -50,7 +50,8 @@ Source files under `src/`:
 - **`main.rs`** — CLI parsing via `clap`, file loading (CSV/TSV/Parquet/JSON/NDJSON via `polars`), wires `App` into `ratatui::run`.
 - **`app.rs`** — All application state and data-manipulation logic. `App` holds two DataFrames: `df` (the original, never mutated after load) and `view` (the current filtered/sorted/grouped result). State is decomposed into focused sub-structs: `SearchState`, `FilterState`, `SortState`, `GroupByState`, `PlotState`, `UniqueValuesState`, `ColumnsViewState`, `ViewportState`. The `Mode` enum drives which keybindings are active.
 - **`app_tests.rs`** — Unit tests for `app.rs`, loaded via `#[path]` so they share `app`'s private scope (`FilterQuery`, `parse_operator`, etc.) without requiring visibility changes.
-- **`config.rs`** — Application-wide numeric constants (`DEFAULT_COLUMN_WIDTH`, `PAGE_SCROLL_AMOUNT`, etc.).
+- **`config.rs`** — Application-wide constants (`DEFAULT_COLUMN_WIDTH`, `PAGE_SCROLL_AMOUNT`, `STDIN_LABEL`, etc.).
+- **`export.rs`** — CSV export of `App::view`. `resolve_path` is a pure function of the typed path (it appends `.csv` so the extension cannot lie about the contents); `write_csv` is the only part that touches the filesystem.
 - **`events.rs`** — The main event loop (`run_app`). Reads crossterm key events and dispatches to `App` methods or small helper functions based on `app.mode`.
 - **`ui.rs`** — All ratatui rendering. Resolves colors from the active `&'static Theme` (`app.theme`) — no hardcoded palette references. `count_visible_from()` handles horizontal viewport windowing; `ViewportState` tracks `row`/`col` offsets so large files stay fast.
 - **`theme.rs`** — Base16 theme system. Owns 9 built-in `Base16Scheme` constants, the semantic `Theme` struct (slot-based: `bg`, `bg_alt`, `accent`, `error`, `series[6]`, etc.), state file I/O at `~/.config/datasight/state.toml`, and the `resolve_theme(cli, env, state)` precedence function (CLI > env > state file > `mocha`).
@@ -71,7 +72,7 @@ Source files under `src/`:
 
 ### Mode state machine
 
-`Mode` variants (defined in `app.rs`): `Normal`, `Search`, `Filter`, `PlotPickY`, `PlotPickX`, `Plot`, `ColumnsView`, `UniqueValues`, `ThemePicker`. The event loop in `events.rs` matches on `app.mode` first; `ui.rs` branches on mode to render the appropriate full-screen view or popup overlay. In browse mode (`BrowserApp`), the picker is gated by an `Option<ThemePicker>` field instead of a mode variant, and `BrowserApp` propagates its `&'static Theme` to the viewer's `App` on file load and on every picker key event so live preview stays in sync across both panes.
+`Mode` variants (defined in `app.rs`): `Normal`, `Search`, `Filter`, `PlotPickY`, `PlotPickX`, `Plot`, `ColumnsView`, `UniqueValues`, `ThemePicker`, `Export`. The event loop in `events.rs` matches on `app.mode` first; `ui.rs` branches on mode to render the appropriate full-screen view or popup overlay. In browse mode (`BrowserApp`), the picker is gated by an `Option<ThemePicker>` field instead of a mode variant, and `BrowserApp` propagates its `&'static Theme` to the viewer's `App` on file load and on every picker key event so live preview stays in sync across both panes.
 
 ### Data flow
 
@@ -96,6 +97,7 @@ Source files under `src/`:
 - `ui()` in `src/ui.rs` takes `area: Rect` — needed so the viewer renders in a sub-pane
 - `dispatch_viewer_key` in `src/events.rs` is `pub(crate)` — reused by browser event loop
 - `e` is taken by the viewer's stats toggle; browser sidebar uses `ctrl-e`
+- Any new viewer mode that accepts typed text must be added to `App::is_typing`, or browse mode swallows `T` from the input to open the theme picker
 - Azure: `object_store::MicrosoftAzureBuilder::from_env()` ignores `AZURE_STORAGE_CONNECTION_STRING`; `azure.rs` parses it manually. HTTP `BlobEndpoint` values (Azurite) require `with_allow_http(true)`.
 
 ### Browse keybindings

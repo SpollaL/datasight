@@ -304,6 +304,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
                 ("b", "Group-by"),
                 ("i", "Inspector"),
                 ("u", "Unique"),
+                ("w", "Export"),
                 ("T", "Theme"),
                 ("?", "Help"),
                 ("q", "Quit"),
@@ -318,6 +319,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
                 ("p", "Plot"),
                 ("i", "Inspector"),
                 ("u", "Unique"),
+                ("w", "Export"),
                 ("T", "Theme"),
                 ("?", "Help"),
                 ("q", "Quit"),
@@ -336,6 +338,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
                 ("p", "Plot"),
                 ("i", "Inspector"),
                 ("u", "Unique"),
+                ("w", "Export"),
                 ("?", "Help"),
                 ("q", "Quit"),
             ],
@@ -350,6 +353,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
                 ("p", "Plot"),
                 ("i", "Inspector"),
                 ("u", "Unique"),
+                ("w", "Export"),
                 ("?", "Help"),
                 ("q", "Quit"),
             ],
@@ -363,6 +367,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
                 ("p", "Plot"),
                 ("i", "Inspector"),
                 ("u", "Unique"),
+                ("w", "Export"),
                 ("?", "Help"),
                 ("q", "Quit"),
             ],
@@ -377,6 +382,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
                 ("i", "Inspector"),
                 ("u", "Unique"),
                 ("y", "Copy"),
+                ("w", "Export"),
                 ("?", "Help"),
                 ("q", "Quit"),
             ],
@@ -391,6 +397,7 @@ fn shortcut_bar<'a>(app: &App, theme: &Theme) -> Line<'a> {
             &[],
         ),
         Mode::Filter => (&[("Enter", "Confirm"), ("Esc", "Cancel")], &[]),
+        Mode::Export => (&[("Enter", "Write"), ("Esc", "Cancel")], &[]),
         Mode::PlotPickY => (
             &[
                 ("← →", "Navigate"),
@@ -618,6 +625,47 @@ fn get_bar(app: &App, theme: &Theme) -> (String, Style) {
                 )
             }
         }
+        Mode::Export => {
+            // Resolving each frame is a `stat` per keystroke, which is free at typing
+            // speed and puts every warning where the decision is made, not after Enter.
+            let resolved = crate::export::resolve_path(&app.export_path);
+            let remote = resolved
+                .as_ref()
+                .and_then(|p| p.to_str())
+                .and_then(crate::export::remote_scheme);
+            // The three cases differ only in text and severity, so the style is built once.
+            let (text, warn) = match (remote, resolved.filter(|p| p.exists())) {
+                (Some(scheme), _) => (
+                    format!(
+                        " w {}_ — ⚠ {} is not writable; export writes local files ",
+                        app.export_path, scheme
+                    ),
+                    true,
+                ),
+                (None, Some(existing)) => (
+                    format!(
+                        " w {}_ — ⚠ overwrites {} ",
+                        app.export_path,
+                        existing.display()
+                    ),
+                    true,
+                ),
+                (None, None) => (
+                    format!(
+                        " w {}_ (writes CSV; .csv added if missing) ",
+                        app.export_path
+                    ),
+                    false,
+                ),
+            };
+            (
+                text,
+                Style::default()
+                    .bg(if warn { theme.warn } else { theme.info })
+                    .fg(theme.bg)
+                    .add_modifier(Modifier::BOLD),
+            )
+        }
         Mode::Normal => {
             let (text, fg) = if app.groupby.active {
                 let key_names = app
@@ -805,6 +853,11 @@ fn help_text(theme: &Theme) -> Text<'static> {
         section("Sort"),
         key("s", "Add/cycle sort on column  (▲ → ▼ → off)"),
         key("S", "Clear all sorts"),
+        Line::raw(""),
+        section("Export"),
+        key("w", "Write the current view to a CSV file"),
+        key("Enter", "Write  |  Esc  Cancel"),
+        key("", "  exports rows as filtered / sorted / grouped"),
         Line::raw(""),
         section("Group By"),
         key("b", "Toggle group-by key [K]"),

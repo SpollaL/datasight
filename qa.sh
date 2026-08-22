@@ -43,6 +43,13 @@ name,qty
 solitary,7
 CSV
 
+# A list-typed column: CsvWriter rejects nested dtypes mid-write, which is the
+# failure path that must not destroy an existing destination file.
+cat > "$QA_TMP/nested.ndjson" <<'JSON'
+{"a": 1, "b": [1, 2]}
+{"a": 2, "b": [3]}
+JSON
+
 # Helpers
 # send: send literal keys (no special key interpretation).
 # The `--` is required: without it tmux parses a payload like "----" as flags.
@@ -104,6 +111,40 @@ assert_buffer_contains() {
     echo "  FAIL [$label] — clipboard buffer missing: '$pattern'"
     FAIL=$((FAIL + 1))
     FAILURES+=("[$label] clipboard buffer missing '$pattern'")
+  fi
+}
+
+# Export helpers. clear_line empties a prompt that opens prefilled (the export
+# prompt suggests a filename), so a test can type a $QA_TMP destination instead of
+# writing into the repo working tree.
+clear_line() {
+  local n="${1:-40}"
+  for _ in $(seq 1 "$n"); do tmux send-keys -t "$APP_PANE" BSpace; done
+  sleep 0.20
+}
+
+assert_file_lines() {
+  local label="$1" file="$2" expected="$3" actual
+  actual="$(wc -l < "$file" 2>/dev/null || echo missing)"
+  if [ "$actual" = "$expected" ]; then
+    echo "  PASS [$label]"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL [$label] — expected $expected lines, got $actual"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("[$label] expected $expected lines in $file, got $actual")
+  fi
+}
+
+assert_file_head() {
+  local label="$1" file="$2" pattern="$3"
+  if head -1 "$file" 2>/dev/null | grep -qF -- "$pattern"; then
+    echo "  PASS [$label]"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL [$label] — first line of $file missing: '$pattern'"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("[$label] first line of $file missing '$pattern'")
   fi
 }
 
@@ -689,6 +730,125 @@ assert_contains "O/null-cell-status" "Copied cell"
 send "k" 0.20
 assert_contains "O/null-cell-app-alive" "order_id"
 quit
+
+# ── Suite P: CSV export ───────────────────────────────────────────────────────
+echo ""
+echo "=== Suite P: CSV export ==="
+
+# P1: w opens a prompt prefilled with a name derived from the source file.
+start_app "tests/fixtures/orders.csv"
+send "w" 0.30
+assert_contains "P/prompt-default-name" "orders.export.csv"
+assert_contains "P/prompt-hint"         "writes CSV"
+assert_contains "P/prompt-shortcut-bar" "Write"
+
+# P2: Esc closes the prompt without writing; the key stays advertised in Normal mode.
+esc
+assert_not_contains "P/esc-closes-prompt" "writes CSV"
+assert_contains     "P/normal-bar-has-w"  "Export"
+
+# P3: the full view exports every row, header included (fixture: 100 rows).
+send "w" 0.25
+clear_line
+send "$QA_TMP/all.csv" 0.20
+enter 0.50
+assert_contains    "P/write-status"  "Wrote 100 rows"
+assert_file_lines  "P/write-lines"   "$QA_TMP/all.csv" 101
+assert_file_head   "P/write-header"  "$QA_TMP/all.csv" "order_id,order_date"
+
+# P4: the confirmation is transient, like the clipboard one.
+send "j" 0.20
+assert_not_contains "P/status-transient" "Wrote 100 rows"
+
+# P5: a filtered view exports only the rows on screen (region North = 25 rows).
+send "llll" 0.20   # order_id → region
+send "f" 0.20
+send "North" 0.20
+enter 0.35
+send "w" 0.25
+clear_line
+send "$QA_TMP/north.csv" 0.20
+enter 0.50
+assert_contains   "P/filtered-status" "Wrote 25 rows"
+assert_file_lines "P/filtered-lines"  "$QA_TMP/north.csv" 26
+assert_file_head  "P/filtered-header" "$QA_TMP/north.csv" "order_id,order_date"
+
+# P6: a path with no extension gets .csv appended, and the status reports the real name.
+send "w" 0.25
+clear_line
+send "$QA_TMP/no_ext" 0.20
+enter 0.50
+assert_contains   "P/appends-extension" "no_ext.csv"
+assert_file_lines "P/appends-lines"     "$QA_TMP/no_ext.csv" 26
+
+# P7: re-typing an existing destination warns before Enter is pressed.
+send "w" 0.25
+clear_line
+send "$QA_TMP/north.csv" 0.30
+assert_contains "P/overwrite-warning" "overwrites"
+esc
+
+# P7b: a remote destination is refused, and the prompt says so before Enter rather
+# than letting the user commit to a write that cannot succeed.
+send "w" 0.25
+clear_line
+send "az://container/out.csv" 0.30
+assert_contains "P/remote-warning-az" "az:// is not writable"
+enter 0.50
+assert_contains "P/remote-refused-az" "export writes local files only"
+send "w" 0.25
+clear_line
+send "s3://bucket/out" 0.30
+assert_contains "P/remote-warning-s3" "s3:// is not writable"
+esc
+
+# P8: the key is discoverable in the help popup.
+send "?" 0.30
+assert_contains "P/help-export" "Write the current view to a CSV file"
+esc
+quit
+
+# P9: the shortcut bar still advertises Export in the states the feature exists for —
+# a filtered view and a sorted one, both of which take an earlier match arm.
+start_app "tests/fixtures/orders.csv"
+send "llll" 0.20   # order_id → region
+send "f" 0.20
+send "North" 0.20
+enter 0.35
+assert_contains "P/filtered-bar-has-w" "Export"
+send "s" 0.30      # add a sort on top
+assert_contains "P/sorted-bar-has-w" "Export"
+quit
+
+# P10: a failed export must not destroy the file it was overwriting. CsvWriter emits
+# the header before rejecting a nested column, so an in-place write would truncate.
+printf 'keep,me\n1,2\n' > "$QA_TMP/precious.csv"
+start_app "$QA_TMP/nested.ndjson"
+send "w" 0.25
+clear_line
+send "$QA_TMP/precious.csv" 0.30
+assert_contains "P/nested-overwrite-warning" "overwrites"
+enter 0.50
+assert_contains  "P/nested-write-fails"     "Export failed"
+assert_file_head "P/nested-target-survives" "$QA_TMP/precious.csv" "keep,me"
+assert_file_lines "P/nested-target-intact"  "$QA_TMP/precious.csv" 2
+quit
+
+# P11: export works from the browse viewer pane. A capital T in the path must reach
+# the prompt instead of opening the theme picker — browse mode intercepts T unless
+# the viewer reports it is taking text input.
+start_app "browse tests/fixtures/"
+enter 0.45   # opens orders.csv; focus lands on the viewer
+send "w" 0.30
+assert_contains "P/browse-prompt" "orders.export.csv"
+clear_line
+send "$QA_TMP/Totals.csv" 0.30
+assert_contains     "P/browse-typed-capital-T" "Totals.csv"
+assert_not_contains "P/browse-no-theme-picker" "nord"
+enter 0.55
+assert_contains   "P/browse-write-status" "Wrote 100 rows"
+assert_file_lines "P/browse-write-lines"  "$QA_TMP/Totals.csv" 101
+send "q" 0.20
 
 # ── Suite X: browse subcommand ────────────────────────────────────────────────
 echo ""

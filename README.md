@@ -18,6 +18,7 @@
 - Multi-series plots — select multiple Y columns with `Space` for side-by-side comparison, or a single Y for line/bar/histogram (`p`, `t`)
 - Column Inspector — schema and stats for every column at a glance (`i`)
 - Column stats popup (`e`)
+- Export the current view to CSV — filters, sorts and group-by included (`w`)
 - Automatic date detection for ISO (`YYYY-MM-DD`) and common non-ISO formats (`MM/DD/YYYY`, `DD-Mon-YYYY`), with an ambiguity guard for slash-dates
 - In-app help popup (`?`)
 - 9 built-in Base16 themes — `--theme nord`, `gruvbox-dark`, `dracula`, etc., switchable live with `T` and persisted across runs
@@ -251,6 +252,28 @@ Copying uses the OSC 52 escape sequence, so the terminal performs the copy — w
 it also works over SSH. Supported by Windows Terminal, WezTerm, kitty, iTerm2, Alacritty,
 Ghostty and Konsole. GNOME Terminal disables OSC 52 by default, and inside tmux you need
 `set-clipboard on`. Where it is unsupported the sequence is ignored silently.
+
+### Export
+
+| Key | Action |
+|-----|--------|
+| `w` | Write the current view to a CSV file |
+
+The prompt opens prefilled with a name derived from the source (`orders.csv` →
+`orders.export.csv`) and writes to the current directory unless you type a path.
+`.csv` is appended when it is missing, so the extension always matches the contents,
+and a leading `~` expands to your home directory. The file contains the rows exactly as
+filtered, sorted and grouped on screen — not the original file.
+
+A warning appears in the prompt before an existing file is overwritten, and the write
+goes to a temporary file that is renamed into place only on success — so a failed export
+(a column CSV cannot represent, a full disk) leaves the existing file untouched.
+
+Exports are always local. Viewing a file from `browse az://…` or `s3://…` suggests a local
+name from the basename (`az://container/data/orders.parquet` → `orders.export.csv`) and
+writes to the current directory — the rows are already in memory, so nothing goes back over
+the network. Typing a remote destination is flagged in the prompt and refused before any
+file is touched; writing back to object storage is not supported.
 
 ### Other
 
