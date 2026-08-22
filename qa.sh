@@ -742,6 +742,35 @@ assert_contains "X6/browse-cwd-default" "orders.csv"
 send "q" 0.20
 tmux send-keys -t "$APP_PANE" "cd $REPO_ROOT" Enter; sleep 0.2
 
+# Reset cwd to repo root — X6 leaves it wherever its last `cd` landed, and $BINARY
+# is a relative path.
+tmux send-keys -t "$APP_PANE" C-c; sleep 0.10
+tmux send-keys -t "$APP_PANE" C-u; sleep 0.05
+tmux send-keys -t "$APP_PANE" "cd $REPO_ROOT" Enter; sleep 0.20
+
+# X7: d on a local file is refused — it is already on disk, so no prompt opens.
+# (The cloud download itself needs az://|s3:// credentials and is covered by the
+# unit tests in src/browser/download.rs against a stub backend.)
+start_app "browse tests/fixtures/"
+send "d" 0.30
+assert_contains "X7/local-download-refused" "already a local file"
+assert_contains "X7/shortcut-bar-intact" "Navigate"
+send "q" 0.20
+
+# X8: the Download hint is offered only for cloud listings. Assert the bar is on
+# screen first — "no Download" is also true of a pane with no app running.
+start_app "browse tests/fixtures/"
+assert_contains "X8/shortcut-bar-present" "ctrl-e"
+assert_not_contains "X8/no-download-hint-local" "Download"
+send "q" 0.20
+
+# X9: d on a directory is refused — the repo root lists dirs first, so the cursor
+# starts on one.
+start_app "browse ."
+send "d" 0.30
+assert_contains "X9/dir-download-refused" "not directories"
+send "q" 0.20
+
 # ── Suite Y: Theme picker ─────────────────────────────────────────────────────
 echo ""
 echo "=== Suite Y: Theme picker ==="

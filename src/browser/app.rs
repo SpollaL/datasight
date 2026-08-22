@@ -1,5 +1,6 @@
 use crate::app::App;
-use crate::browser::{Entry, FileBrowser};
+use crate::browser::download::{self, DownloadPrompt};
+use crate::browser::{is_remote, Entry, FileBrowser};
 use crate::text_viewer::TextApp;
 use crate::theme::Theme;
 use crate::theme_picker::ThemePicker;
@@ -47,6 +48,9 @@ pub struct BrowserApp {
     pub should_quit: bool,
     pub theme: &'static Theme,
     pub picker: Option<ThemePicker>,
+    /// Pending download, gated by an `Option` like `picker`. `Some` means the
+    /// destination prompt owns the keyboard.
+    pub download: Option<DownloadPrompt>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -73,6 +77,7 @@ impl BrowserApp {
             should_quit: false,
             theme,
             picker: None,
+            download: None,
         }
     }
 
@@ -102,6 +107,47 @@ impl BrowserApp {
         if parent != self.cwd {
             self.refresh_listing(parent);
         }
+    }
+
+    /// Open the download prompt for the entry under the cursor.
+    ///
+    /// Only remote files can be downloaded: a local entry is already on disk, and
+    /// copying a whole prefix recursively is a different feature.
+    pub fn begin_download(&mut self) {
+        let Some(entry) = self.entries.get(self.cursor) else {
+            return;
+        };
+        if entry.is_dir() {
+            self.status = Some("Download works on files, not directories".to_string());
+        } else if !is_remote(&entry.path) {
+            self.status = Some(format!("{} is already a local file", entry.name));
+        } else {
+            self.download = Some(DownloadPrompt::open(&entry.path));
+            self.status = None;
+        }
+    }
+
+    /// Fetch the pending download to the typed destination and report the outcome.
+    /// A blank destination has nothing to resolve, so the prompt stays open.
+    pub fn confirm_download(&mut self) {
+        let Some(prompt) = self.download.as_ref() else {
+            return;
+        };
+        let Some(dest) = download::resolve_dest(&prompt.input, &prompt.source) else {
+            return;
+        };
+        let result = download::download_to(self.backend.as_ref(), &prompt.source, &dest);
+        self.download = None;
+        // The prompt showed the full destination before Enter, so the confirmation
+        // names the file only — it has to fit the narrow browser pane.
+        let name = dest
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| dest.display().to_string());
+        self.status = Some(match result {
+            Ok(bytes) => format!("✓ Saved {} ({})", name, download::human_size(bytes)),
+            Err(e) => format!("✗ Download failed: {}", e),
+        });
     }
 
     fn refresh_listing(&mut self, path: String) {
@@ -303,6 +349,106 @@ mod tests {
         );
         assert!(app.status.is_some(), "status should be set on list error");
         assert!(app.entries.is_empty(), "entries should be empty on error");
+    }
+
+    // ── download ──────────────────────────────────────────────────────────────
+
+    /// Serves object bytes so the full prompt → fetch → write path can be exercised
+    /// without a cloud account.
+    struct RemoteBackend {
+        entries: Vec<Entry>,
+        bytes: Vec<u8>,
+    }
+
+    impl FileBrowser for RemoteBackend {
+        fn list(&self, _prefix: &str) -> Result<Vec<Entry>, BrowserError> {
+            Ok(self.entries.clone())
+        }
+        fn download_bytes(&self, _path: &str) -> Result<Vec<u8>, BrowserError> {
+            Ok(self.bytes.clone())
+        }
+    }
+
+    fn remote_entry(name: &str) -> Entry {
+        Entry {
+            kind: crate::browser::classify(name),
+            name: name.to_string(),
+            path: format!("az://c/data/{}", name),
+        }
+    }
+
+    fn make_remote_app(bytes: &[u8]) -> BrowserApp {
+        BrowserApp::new(
+            Box::new(RemoteBackend {
+                entries: vec![remote_entry("sales.csv")],
+                bytes: bytes.to_vec(),
+            }),
+            "az://c/data/".to_string(),
+            crate::theme::default_theme(),
+        )
+    }
+
+    #[test]
+    fn test_begin_download_opens_prompt_for_remote_file() {
+        let mut app = make_remote_app(b"a,b\n");
+        app.begin_download();
+        let prompt = app.download.expect("prompt should open for a remote file");
+        assert_eq!(prompt.source, "az://c/data/sales.csv");
+        assert_eq!(prompt.input, "sales.csv");
+    }
+
+    #[test]
+    fn test_begin_download_refuses_local_file() {
+        let mut app = make_app(vec![file_entry("a.csv")]);
+        app.begin_download();
+        assert!(app.download.is_none(), "no prompt for a local file");
+        assert!(app.status.unwrap().contains("already a local file"));
+    }
+
+    #[test]
+    fn test_begin_download_refuses_directory() {
+        let mut app = BrowserApp::new(
+            Box::new(StubBackend {
+                entries: vec![Entry {
+                    name: "sub".to_string(),
+                    path: "az://c/data/sub/".to_string(),
+                    kind: EntryKind::Dir,
+                }],
+            }),
+            "az://c/data/".to_string(),
+            crate::theme::default_theme(),
+        );
+        app.begin_download();
+        assert!(app.download.is_none(), "no prompt for a directory");
+        assert!(app.status.unwrap().contains("not directories"));
+    }
+
+    #[test]
+    fn test_confirm_download_writes_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("out.csv");
+        let mut app = make_remote_app(b"a,b\n1,2\n");
+        app.begin_download();
+        app.download.as_mut().unwrap().input = dest.to_string_lossy().to_string();
+        app.confirm_download();
+        assert!(app.download.is_none(), "prompt should close after Enter");
+        assert_eq!(std::fs::read(&dest).unwrap(), b"a,b\n1,2\n");
+        let status = app.status.unwrap();
+        assert!(status.contains('✓'), "unexpected status: {}", status);
+        assert!(status.contains("8 B"), "unexpected status: {}", status);
+    }
+
+    #[test]
+    fn test_confirm_download_keeps_prompt_open_on_blank_input() {
+        let mut app = make_remote_app(b"a,b\n");
+        app.begin_download();
+        app.download.as_mut().unwrap().input = "  ".to_string();
+        app.confirm_download();
+        assert!(
+            app.download.is_some(),
+            "a blank destination has nothing to write"
+        );
+        assert!(app.status.is_none());
     }
 
     #[test]

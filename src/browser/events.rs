@@ -23,6 +23,13 @@ pub fn run_browser_app(
             }
             let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
 
+            // A pending download owns the keyboard: the destination is free text, so
+            // it has to be consumed before any single-key binding sees it.
+            if app.download.is_some() {
+                handle_download_key(&mut app, &key);
+                continue;
+            }
+
             // Theme picker takes precedence over all other browse-mode keys.
             if app.picker.is_some() {
                 if let Some(picker) = app.picker.as_mut() {
@@ -121,7 +128,26 @@ fn handle_browser_key(app: &mut BrowserApp, key: &event::KeyEvent) {
         event::KeyCode::Char('k') | event::KeyCode::Up => app.navigate_up(),
         event::KeyCode::Esc => app.ascend(),
         event::KeyCode::Char('.') | event::KeyCode::Enter => open_or_descend(app),
+        event::KeyCode::Char('d') => app.begin_download(),
         event::KeyCode::Char('q') if app.viewer.is_none() => app.should_quit = true,
+        _ => {}
+    }
+}
+
+fn handle_download_key(app: &mut BrowserApp, key: &event::KeyEvent) {
+    match key.code {
+        event::KeyCode::Enter => app.confirm_download(),
+        event::KeyCode::Esc => app.download = None,
+        event::KeyCode::Backspace => {
+            if let Some(prompt) = app.download.as_mut() {
+                prompt.input.pop();
+            }
+        }
+        event::KeyCode::Char(c) => {
+            if let Some(prompt) = app.download.as_mut() {
+                prompt.input.push(c);
+            }
+        }
         _ => {}
     }
 }

@@ -25,7 +25,7 @@
 - Custom delimiter support via `-d` flag — works with pipe-separated, semicolon-separated, and any single-character delimiter
 - Pipe-friendly — reads from stdin with automatic format detection (CSV, JSON, NDJSON)
 - Viewport-windowed rendering — stays fast on large files
-- File browser (`browse`) — navigate local directories and Azure Blob / S3 buckets, open files directly into the viewer
+- File browser (`browse`) — navigate local directories and Azure Blob / S3 buckets, open files directly into the viewer, download cloud objects locally (`d`)
 
 ## Install
 
@@ -108,8 +108,14 @@ Azure reads `AZURE_STORAGE_CONNECTION_STRING` or individual `AZURE_STORAGE_ACCOU
 | `Esc` | Go up to parent |
 | `Tab` | Switch focus browser ↔ viewer |
 | `ctrl-e` | Toggle browser sidebar |
+| `d` | Download the selected cloud file locally (`az://` / `s3://` only) |
 | `T` | Open theme picker |
 | `q` | Quit (when no file is open) |
+
+`d` prompts for a destination, pre-filled with the remote file name. `~` expands to
+your home directory, and a destination ending in `/` (or an existing directory) keeps
+the remote name — so `~/Downloads/` saves `sales.csv` as `~/Downloads/sales.csv`. The
+prompt shows the resolved path, and warns before overwriting an existing file.
 ## Themes
 
 datasight ships with 9 Base16 color themes:
