@@ -43,6 +43,12 @@ A release should only be tagged after `qa.sh` exits 0 **and** `cargo test` passe
 
 When implementing a new feature that changes keybindings, adds modes, or modifies existing TUI interactions, update `qa.sh` to cover the new behaviour before opening the PR.
 
+Start every app in a test with `start_app` (or `launch` for a full shell command such as a
+stdin pipe). Both respawn the pane and poll until the TUI has actually painted — never send
+keys after a bare `sleep`, because datasight ignores ctrl-c and `q` is ignored in browse mode
+while a file is open, so a previous app can still own the screen and the assertions will read
+the wrong frame.
+
 ## Architecture
 
 Source files under `src/`:

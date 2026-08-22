@@ -62,13 +62,69 @@ pgdn()   { key PgDn  0.15; }
 pgup()   { key PgUp  0.15; }
 cap()    { tmux capture-pane -t "$APP_PANE" -p 2>/dev/null || true; }
 
-start_app() {
-  # Kill any running app cleanly; clear shell input line
-  tmux send-keys -t "$APP_PANE" C-c; sleep 0.15
-  tmux send-keys -t "$APP_PANE" C-u; sleep 0.10
-  tmux send-keys -t "$APP_PANE" "$BINARY $*" Enter
-  sleep 0.6
+# await_pane: poll until PATTERN shows up in the pane. Returns 1 on timeout.
+await_pane() {
+  local pattern="$1" deadline=$((SECONDS + ${2:-10}))
+  while [ "$SECONDS" -le "$deadline" ]; do
+    cap | grep -qF -- "$pattern" && return 0
+    sleep 0.05
+  done
+  return 1
 }
+
+# await_app: poll until the launched TUI owns the screen — a box corner is
+# present and MARKER (the shell token printed just before launching) is gone.
+#
+# Waiting for the corner alone is not enough: it would also match the frame of a
+# previous app, or a shell prompt drawn with box characters. The marker
+# disappearing is what proves we are looking at the new app's alternate screen.
+await_app() {
+  local marker="$1" deadline=$((SECONDS + ${2:-20})) pane
+  while [ "$SECONDS" -le "$deadline" ]; do
+    pane="$(cap)"
+    if ! printf '%s' "$pane" | grep -qF -- "$marker" &&
+       printf '%s' "$pane" | grep -qE '[╭┌]'; then
+      sleep 0.15   # let the first full paint finish before any key is sent
+      return 0
+    fi
+    sleep 0.05
+  done
+  return 1
+}
+
+LAUNCHES=0
+
+# launch: run CMD in the app pane and block until its TUI has painted.
+#
+# The pane is respawned rather than interrupted. datasight ignores ctrl-c, and in
+# browse mode `q` is ignored while a file is open (browser/events.rs), so neither
+# reliably dismisses the previous app — it can still be running and repainting
+# when the next one is launched.
+#
+# Both waits poll rather than sleeping a fixed amount. The fixed sleep this
+# replaces was the cause of intermittent failures under load: keystrokes arrived
+# before the app existed and reached the shell instead, where a filter query like
+# "> 0" is a redirection that silently created junk files in the repo root.
+launch() {
+  local cmd="$1" marker
+  LAUNCHES=$((LAUNCHES + 1))
+  marker="qa-shell-ready-$LAUNCHES"
+  tmux respawn-pane -k -t "$APP_PANE"; sleep 0.20
+  tmux send-keys -t "$APP_PANE" "clear; echo $marker" Enter
+  if ! await_pane "$marker" 10; then
+    echo "  FAIL [launch] shell never became ready for: $cmd"
+    FAIL=$((FAIL + 1)); FAILURES+=("[launch] shell not ready for '$cmd'")
+    return 1
+  fi
+  tmux send-keys -t "$APP_PANE" "$cmd" Enter
+  if ! await_app "$marker" 20; then
+    echo "  FAIL [launch] no frame painted for: $cmd"
+    FAIL=$((FAIL + 1)); FAILURES+=("[launch] no frame for '$cmd'")
+    return 1
+  fi
+}
+
+start_app() { launch "$BINARY $*"; }
 
 quit() {
   send "q" 0.20
@@ -172,14 +228,12 @@ assert_contains "A/wide-hscroll" "col"
 quit
 
 # stdin CSV
-tmux send-keys -t "$APP_PANE" "cat tests/fixtures/orders.csv | $BINARY" Enter
-sleep 0.6
+launch "cat tests/fixtures/orders.csv | $BINARY"
 assert_contains "A/stdin-csv" "order_id"
 quit
 
 # stdin JSON
-tmux send-keys -t "$APP_PANE" "cat tests/fixtures/orders.json | $BINARY" Enter
-sleep 0.6
+launch "cat tests/fixtures/orders.json | $BINARY"
 assert_contains "A/stdin-json" "order_id"
 quit
 
@@ -895,12 +949,14 @@ assert_contains "X5/browser-focused" "wide.csv"
 send "q" 0.20
 
 # X6: browse with no path arg opens current dir
+# The cd is part of the launched command, not bare keystrokes: `launch` only sends
+# it once the shell has proved it is reading input, and every launch respawns the
+# pane back to the repo root afterwards, so no cleanup cd is needed.
 REPO_ROOT=$(git rev-parse --show-toplevel)
-tmux send-keys -t "$APP_PANE" "cd $REPO_ROOT/tests/fixtures" Enter; sleep 0.3
-start_app "browse"
+# $BINARY is relative, so it cannot survive the cd — resolve it against the root.
+launch "cd $REPO_ROOT/tests/fixtures && $REPO_ROOT/target/debug/datasight browse"
 assert_contains "X6/browse-cwd-default" "orders.csv"
 send "q" 0.20
-tmux send-keys -t "$APP_PANE" "cd $REPO_ROOT" Enter; sleep 0.2
 
 # ── Suite Y: Theme picker ─────────────────────────────────────────────────────
 echo ""
