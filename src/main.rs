@@ -3,6 +3,7 @@ mod browser;
 mod clipboard;
 mod config;
 mod events;
+mod export;
 mod text_viewer;
 mod theme;
 mod theme_picker;
@@ -326,7 +327,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Error reading stdin: {}", err);
                 std::process::exit(1);
             });
-            (df, String::from("<stdin>"))
+            (df, String::from(config::STDIN_LABEL))
         }
     };
 

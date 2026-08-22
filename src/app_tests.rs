@@ -1422,3 +1422,178 @@ mod cycle_agg_tests {
         assert_eq!(app.columns_view.state.selected(), Some(0));
     }
 }
+
+// Round-trip tests for the CSV export. Each writes into a TempDir and reloads via
+// `crate::load_dataframe`, so an exported file is asserted to come back with the
+// schema and rows it was written with.
+mod export_tests {
+    use super::*;
+    use std::path::Path;
+    use tempfile::TempDir;
+
+    fn make_app() -> App {
+        let df = df! {
+            "name" => ["Alice", "Bob", "Charlie"],
+            "age" => [30i64, 25, 35],
+        }
+        .unwrap();
+        App::new(df, "test.csv".to_string(), crate::theme::default_theme())
+    }
+
+    /// Exports to `<dir>/out.csv` and asserts the status line reported success.
+    fn export_to(app: &mut App, dir: &TempDir) -> std::path::PathBuf {
+        let path = dir.path().join("out.csv");
+        app.export_view(path.to_str().unwrap());
+        let status = app.status.as_deref().unwrap_or("");
+        assert!(status.contains('✓'), "export failed: {}", status);
+        path
+    }
+
+    fn reload(path: &Path) -> DataFrame {
+        crate::load_dataframe(path.to_str().unwrap(), None).unwrap()
+    }
+
+    #[test]
+    fn export_writes_the_filtered_view_not_the_original() {
+        let dir = TempDir::new().unwrap();
+        let mut app = make_app();
+        app.filter.filters = vec![("name".to_string(), "Bob".to_string())];
+        app.update_filter();
+
+        let out = reload(&export_to(&mut app, &dir));
+        assert_eq!(out.height(), 1);
+        assert_eq!(out.get_column_names_str(), vec!["name", "age"]);
+        assert_eq!(app.df.height(), 3, "the original must be untouched");
+    }
+
+    #[test]
+    fn export_preserves_the_sort_order_on_screen() {
+        let dir = TempDir::new().unwrap();
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.sort_by_column();
+        app.sort_by_column(); // descending
+
+        let out = reload(&export_to(&mut app, &dir));
+        let names = out.column("name").unwrap().str().unwrap();
+        assert_eq!(
+            (names.get(0), names.get(1), names.get(2)),
+            (Some("Charlie"), Some("Bob"), Some("Alice"))
+        );
+    }
+
+    #[test]
+    fn export_preserves_the_grouped_view() {
+        let dir = TempDir::new().unwrap();
+        let df = df! {
+            "city" => ["NY", "NY", "LA"],
+            "amount" => [10i64, 20, 5],
+        }
+        .unwrap();
+        let mut app = App::new(df, "sales.csv".to_string(), crate::theme::default_theme());
+        app.state.select_column(Some(0));
+        app.toggle_groupby_key();
+        app.state.select_column(Some(1));
+        app.cycle_groupby_agg();
+        app.apply_groupby();
+
+        let out = reload(&export_to(&mut app, &dir));
+        assert_eq!(out.height(), 2, "one row per group");
+        assert_eq!(out.width(), app.view.width());
+    }
+
+    #[test]
+    fn export_is_deterministic() {
+        let dir = TempDir::new().unwrap();
+        let mut app = make_app();
+        let path = export_to(&mut app, &dir);
+        let first = std::fs::read(&path).unwrap();
+        export_to(&mut app, &dir); // same destination, overwritten
+        assert_eq!(first, std::fs::read(&path).unwrap());
+    }
+
+    #[test]
+    fn export_of_an_empty_view_writes_a_header_only_file() {
+        let dir = TempDir::new().unwrap();
+        let mut app = make_app();
+        app.filter.filters = vec![("name".to_string(), "nobody".to_string())];
+        app.update_filter();
+        assert_eq!(app.view.height(), 0);
+
+        let path = export_to(&mut app, &dir);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "name,age\n");
+    }
+
+    #[test]
+    fn export_writes_real_nulls_never_display_glyphs() {
+        // `∅` is the UI glyph for a null and `(null)` is the filter sentinel. Both are
+        // rendering concerns: exporting the DataFrame rather than the rendered cells is
+        // what keeps them out of the file.
+        let dir = TempDir::new().unwrap();
+        let df = df! {
+            "name" => [Some("Alice"), None, Some("Charlie")],
+            "age" => [Some(30i64), Some(25), None],
+        }
+        .unwrap();
+        let mut app = App::new(df, "nulls.csv".to_string(), crate::theme::default_theme());
+
+        let path = export_to(&mut app, &dir);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains('∅'), "display glyph leaked into {}", text);
+        assert!(!text.contains("(null)"), "sentinel leaked into {}", text);
+
+        let out = reload(&path);
+        assert_eq!(out.column("age").unwrap().null_count(), 1);
+    }
+
+    #[test]
+    fn export_with_a_blank_path_does_nothing() {
+        let mut app = make_app();
+        app.export_view("   ");
+        assert!(app.status.is_none());
+    }
+
+    #[test]
+    fn export_reports_a_failure_in_the_status_line() {
+        let dir = TempDir::new().unwrap();
+        let mut app = make_app();
+        let missing = dir.path().join("no").join("such").join("dir").join("o.csv");
+        app.export_view(missing.to_str().unwrap());
+        let status = app.status.as_deref().unwrap_or("");
+        assert!(status.contains('✗'), "expected a failure, got: {}", status);
+    }
+
+    #[test]
+    fn export_of_a_remote_source_suggests_and_writes_a_local_file() {
+        // `browse az://…` hands the viewer the full URI as its file_path. The export
+        // must stay local: the DataFrame is already in memory, and the object-store
+        // backends are read-only.
+        let dir = TempDir::new().unwrap();
+        let df = df!["name" => ["Alice"], "age" => [30i64]].unwrap();
+        let mut app = App::new(
+            df,
+            "az://container/data/orders.parquet".to_string(),
+            crate::theme::default_theme(),
+        );
+
+        let suggested = crate::export::default_filename(&app.file_path);
+        assert_eq!(suggested, "orders.export.csv");
+        assert!(!suggested.contains("://"), "must not suggest a remote path");
+
+        let out = reload(&export_to(&mut app, &dir));
+        assert_eq!(out.height(), 1);
+    }
+
+    #[test]
+    fn export_to_a_remote_destination_is_refused() {
+        let mut app = make_app();
+        app.export_view("az://container/out.csv");
+        let status = app.status.as_deref().unwrap_or("");
+        assert!(status.contains('✗'), "expected a failure, got: {}", status);
+        assert!(
+            status.contains("local files only"),
+            "expected the cause to be named, got: {}",
+            status
+        );
+    }
+}

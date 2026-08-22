@@ -43,6 +43,13 @@ name,qty
 solitary,7
 CSV
 
+# A list-typed column: CsvWriter rejects nested dtypes mid-write, which is the
+# failure path that must not destroy an existing destination file.
+cat > "$QA_TMP/nested.ndjson" <<'JSON'
+{"a": 1, "b": [1, 2]}
+{"a": 2, "b": [3]}
+JSON
+
 # Helpers
 # send: send literal keys (no special key interpretation).
 # The `--` is required: without it tmux parses a payload like "----" as flags.
@@ -55,13 +62,69 @@ pgdn()   { key PgDn  0.15; }
 pgup()   { key PgUp  0.15; }
 cap()    { tmux capture-pane -t "$APP_PANE" -p 2>/dev/null || true; }
 
-start_app() {
-  # Kill any running app cleanly; clear shell input line
-  tmux send-keys -t "$APP_PANE" C-c; sleep 0.15
-  tmux send-keys -t "$APP_PANE" C-u; sleep 0.10
-  tmux send-keys -t "$APP_PANE" "$BINARY $*" Enter
-  sleep 0.6
+# await_pane: poll until PATTERN shows up in the pane. Returns 1 on timeout.
+await_pane() {
+  local pattern="$1" deadline=$((SECONDS + ${2:-10}))
+  while [ "$SECONDS" -le "$deadline" ]; do
+    cap | grep -qF -- "$pattern" && return 0
+    sleep 0.05
+  done
+  return 1
 }
+
+# await_app: poll until the launched TUI owns the screen — a box corner is
+# present and MARKER (the shell token printed just before launching) is gone.
+#
+# Waiting for the corner alone is not enough: it would also match the frame of a
+# previous app, or a shell prompt drawn with box characters. The marker
+# disappearing is what proves we are looking at the new app's alternate screen.
+await_app() {
+  local marker="$1" deadline=$((SECONDS + ${2:-20})) pane
+  while [ "$SECONDS" -le "$deadline" ]; do
+    pane="$(cap)"
+    if ! printf '%s' "$pane" | grep -qF -- "$marker" &&
+       printf '%s' "$pane" | grep -qE '[╭┌]'; then
+      sleep 0.15   # let the first full paint finish before any key is sent
+      return 0
+    fi
+    sleep 0.05
+  done
+  return 1
+}
+
+LAUNCHES=0
+
+# launch: run CMD in the app pane and block until its TUI has painted.
+#
+# The pane is respawned rather than interrupted. datasight ignores ctrl-c, and in
+# browse mode `q` is ignored while a file is open (browser/events.rs), so neither
+# reliably dismisses the previous app — it can still be running and repainting
+# when the next one is launched.
+#
+# Both waits poll rather than sleeping a fixed amount. The fixed sleep this
+# replaces was the cause of intermittent failures under load: keystrokes arrived
+# before the app existed and reached the shell instead, where a filter query like
+# "> 0" is a redirection that silently created junk files in the repo root.
+launch() {
+  local cmd="$1" marker
+  LAUNCHES=$((LAUNCHES + 1))
+  marker="qa-shell-ready-$LAUNCHES"
+  tmux respawn-pane -k -t "$APP_PANE"; sleep 0.20
+  tmux send-keys -t "$APP_PANE" "clear; echo $marker" Enter
+  if ! await_pane "$marker" 10; then
+    echo "  FAIL [launch] shell never became ready for: $cmd"
+    FAIL=$((FAIL + 1)); FAILURES+=("[launch] shell not ready for '$cmd'")
+    return 1
+  fi
+  tmux send-keys -t "$APP_PANE" "$cmd" Enter
+  if ! await_app "$marker" 20; then
+    echo "  FAIL [launch] no frame painted for: $cmd"
+    FAIL=$((FAIL + 1)); FAILURES+=("[launch] no frame for '$cmd'")
+    return 1
+  fi
+}
+
+start_app() { launch "$BINARY $*"; }
 
 quit() {
   send "q" 0.20
@@ -107,6 +170,40 @@ assert_buffer_contains() {
   fi
 }
 
+# Export helpers. clear_line empties a prompt that opens prefilled (the export
+# prompt suggests a filename), so a test can type a $QA_TMP destination instead of
+# writing into the repo working tree.
+clear_line() {
+  local n="${1:-40}"
+  for _ in $(seq 1 "$n"); do tmux send-keys -t "$APP_PANE" BSpace; done
+  sleep 0.20
+}
+
+assert_file_lines() {
+  local label="$1" file="$2" expected="$3" actual
+  actual="$(wc -l < "$file" 2>/dev/null || echo missing)"
+  if [ "$actual" = "$expected" ]; then
+    echo "  PASS [$label]"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL [$label] — expected $expected lines, got $actual"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("[$label] expected $expected lines in $file, got $actual")
+  fi
+}
+
+assert_file_head() {
+  local label="$1" file="$2" pattern="$3"
+  if head -1 "$file" 2>/dev/null | grep -qF -- "$pattern"; then
+    echo "  PASS [$label]"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL [$label] — first line of $file missing: '$pattern'"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("[$label] first line of $file missing '$pattern'")
+  fi
+}
+
 # ── Suite A: File format loading ───────────────────────────────────────────────
 echo ""
 echo "=== Suite A: File format loading ==="
@@ -131,14 +228,12 @@ assert_contains "A/wide-hscroll" "col"
 quit
 
 # stdin CSV
-tmux send-keys -t "$APP_PANE" "cat tests/fixtures/orders.csv | $BINARY" Enter
-sleep 0.6
+launch "cat tests/fixtures/orders.csv | $BINARY"
 assert_contains "A/stdin-csv" "order_id"
 quit
 
 # stdin JSON
-tmux send-keys -t "$APP_PANE" "cat tests/fixtures/orders.json | $BINARY" Enter
-sleep 0.6
+launch "cat tests/fixtures/orders.json | $BINARY"
 assert_contains "A/stdin-json" "order_id"
 quit
 
@@ -690,6 +785,125 @@ send "k" 0.20
 assert_contains "O/null-cell-app-alive" "order_id"
 quit
 
+# ── Suite P: CSV export ───────────────────────────────────────────────────────
+echo ""
+echo "=== Suite P: CSV export ==="
+
+# P1: w opens a prompt prefilled with a name derived from the source file.
+start_app "tests/fixtures/orders.csv"
+send "w" 0.30
+assert_contains "P/prompt-default-name" "orders.export.csv"
+assert_contains "P/prompt-hint"         "writes CSV"
+assert_contains "P/prompt-shortcut-bar" "Write"
+
+# P2: Esc closes the prompt without writing; the key stays advertised in Normal mode.
+esc
+assert_not_contains "P/esc-closes-prompt" "writes CSV"
+assert_contains     "P/normal-bar-has-w"  "Export"
+
+# P3: the full view exports every row, header included (fixture: 100 rows).
+send "w" 0.25
+clear_line
+send "$QA_TMP/all.csv" 0.20
+enter 0.50
+assert_contains    "P/write-status"  "Wrote 100 rows"
+assert_file_lines  "P/write-lines"   "$QA_TMP/all.csv" 101
+assert_file_head   "P/write-header"  "$QA_TMP/all.csv" "order_id,order_date"
+
+# P4: the confirmation is transient, like the clipboard one.
+send "j" 0.20
+assert_not_contains "P/status-transient" "Wrote 100 rows"
+
+# P5: a filtered view exports only the rows on screen (region North = 25 rows).
+send "llll" 0.20   # order_id → region
+send "f" 0.20
+send "North" 0.20
+enter 0.35
+send "w" 0.25
+clear_line
+send "$QA_TMP/north.csv" 0.20
+enter 0.50
+assert_contains   "P/filtered-status" "Wrote 25 rows"
+assert_file_lines "P/filtered-lines"  "$QA_TMP/north.csv" 26
+assert_file_head  "P/filtered-header" "$QA_TMP/north.csv" "order_id,order_date"
+
+# P6: a path with no extension gets .csv appended, and the status reports the real name.
+send "w" 0.25
+clear_line
+send "$QA_TMP/no_ext" 0.20
+enter 0.50
+assert_contains   "P/appends-extension" "no_ext.csv"
+assert_file_lines "P/appends-lines"     "$QA_TMP/no_ext.csv" 26
+
+# P7: re-typing an existing destination warns before Enter is pressed.
+send "w" 0.25
+clear_line
+send "$QA_TMP/north.csv" 0.30
+assert_contains "P/overwrite-warning" "overwrites"
+esc
+
+# P7b: a remote destination is refused, and the prompt says so before Enter rather
+# than letting the user commit to a write that cannot succeed.
+send "w" 0.25
+clear_line
+send "az://container/out.csv" 0.30
+assert_contains "P/remote-warning-az" "az:// is not writable"
+enter 0.50
+assert_contains "P/remote-refused-az" "export writes local files only"
+send "w" 0.25
+clear_line
+send "s3://bucket/out" 0.30
+assert_contains "P/remote-warning-s3" "s3:// is not writable"
+esc
+
+# P8: the key is discoverable in the help popup.
+send "?" 0.30
+assert_contains "P/help-export" "Write the current view to a CSV file"
+esc
+quit
+
+# P9: the shortcut bar still advertises Export in the states the feature exists for —
+# a filtered view and a sorted one, both of which take an earlier match arm.
+start_app "tests/fixtures/orders.csv"
+send "llll" 0.20   # order_id → region
+send "f" 0.20
+send "North" 0.20
+enter 0.35
+assert_contains "P/filtered-bar-has-w" "Export"
+send "s" 0.30      # add a sort on top
+assert_contains "P/sorted-bar-has-w" "Export"
+quit
+
+# P10: a failed export must not destroy the file it was overwriting. CsvWriter emits
+# the header before rejecting a nested column, so an in-place write would truncate.
+printf 'keep,me\n1,2\n' > "$QA_TMP/precious.csv"
+start_app "$QA_TMP/nested.ndjson"
+send "w" 0.25
+clear_line
+send "$QA_TMP/precious.csv" 0.30
+assert_contains "P/nested-overwrite-warning" "overwrites"
+enter 0.50
+assert_contains  "P/nested-write-fails"     "Export failed"
+assert_file_head "P/nested-target-survives" "$QA_TMP/precious.csv" "keep,me"
+assert_file_lines "P/nested-target-intact"  "$QA_TMP/precious.csv" 2
+quit
+
+# P11: export works from the browse viewer pane. A capital T in the path must reach
+# the prompt instead of opening the theme picker — browse mode intercepts T unless
+# the viewer reports it is taking text input.
+start_app "browse tests/fixtures/"
+enter 0.45   # opens orders.csv; focus lands on the viewer
+send "w" 0.30
+assert_contains "P/browse-prompt" "orders.export.csv"
+clear_line
+send "$QA_TMP/Totals.csv" 0.30
+assert_contains     "P/browse-typed-capital-T" "Totals.csv"
+assert_not_contains "P/browse-no-theme-picker" "nord"
+enter 0.55
+assert_contains   "P/browse-write-status" "Wrote 100 rows"
+assert_file_lines "P/browse-write-lines"  "$QA_TMP/Totals.csv" 101
+send "q" 0.20
+
 # ── Suite X: browse subcommand ────────────────────────────────────────────────
 echo ""
 echo "=== Suite X: browse subcommand ==="
@@ -735,12 +949,14 @@ assert_contains "X5/browser-focused" "wide.csv"
 send "q" 0.20
 
 # X6: browse with no path arg opens current dir
+# The cd is part of the launched command, not bare keystrokes: `launch` only sends
+# it once the shell has proved it is reading input, and every launch respawns the
+# pane back to the repo root afterwards, so no cleanup cd is needed.
 REPO_ROOT=$(git rev-parse --show-toplevel)
-tmux send-keys -t "$APP_PANE" "cd $REPO_ROOT/tests/fixtures" Enter; sleep 0.3
-start_app "browse"
+# $BINARY is relative, so it cannot survive the cd — resolve it against the root.
+launch "cd $REPO_ROOT/tests/fixtures && $REPO_ROOT/target/debug/datasight browse"
 assert_contains "X6/browse-cwd-default" "orders.csv"
 send "q" 0.20
-tmux send-keys -t "$APP_PANE" "cd $REPO_ROOT" Enter; sleep 0.2
 
 # ── Suite Y: Theme picker ─────────────────────────────────────────────────────
 echo ""
