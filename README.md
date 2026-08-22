@@ -283,8 +283,8 @@ original file. Null values are written as empty fields: the `∅` shown on scree
 A warning appears in the prompt before an existing file is overwritten, and the write
 goes to a temporary file that is renamed into place only on success — so a failed export
 (a column CSV cannot represent, a full disk) leaves the existing file untouched.
-Directories are never created for you: exporting into a path whose parent does not exist
-fails without writing anything.
+Missing directories in the destination are created for you, the same as `d` in the file
+browser.
 
 Exports are always local. Viewing a file from `browse az://…` or `s3://…` suggests a local
 name from the basename (`az://container/data/orders.parquet` → `orders.export.csv`) and
@@ -329,11 +329,6 @@ These operators only work on numeric columns. Use `= value` or `!= value` for ex
 **The unique values popup shows fewer results than expected**
 
 The popup is capped at the 500 most frequent values. If your column has more than 500 distinct values, the title will say `[top 500]`.
-
-**Export fails with "No such file or directory"**
-
-The parent directory has to exist already — export never creates directories. Check the
-path you typed, or create the directory first.
 
 **Large files are slow to open**
 

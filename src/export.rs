@@ -68,7 +68,8 @@ fn expand_home(path: &str) -> PathBuf {
     }
 }
 
-/// Write `df` to `path` as CSV, replacing any existing file.
+/// Write `df` to `path` as CSV, replacing any existing file and creating any missing
+/// parent directories.
 ///
 /// The write goes to a sibling `.tmp` file and is renamed into place only on success.
 /// `File::create` truncates immediately and `CsvWriter` emits the header before it
@@ -86,6 +87,13 @@ pub fn write_csv(df: &mut DataFrame, path: &Path) -> std::io::Result<()> {
             "cannot write to {} paths — export writes local files only",
             scheme
         )));
+    }
+    // Missing parents are created, the same as `d` in browse mode: the two ways of
+    // writing a file out should not disagree about what a destination path means.
+    // Unlike the download, there is no fetch to fail first — the frame is already in
+    // memory — so a later write error can leave the new directory behind empty.
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
     }
     let scratch = scratch_sibling(path);
     match write_all(df, &scratch) {
@@ -245,6 +253,26 @@ mod tests {
         write_csv(&mut df, &target).unwrap();
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "a\n1\n2\n");
         assert!(!scratch_sibling(&target).exists(), "scratch file leaked");
+    }
+
+    #[test]
+    fn write_csv_creates_missing_parent_directories() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let target = dir.path().join("reports").join("q3").join("out.csv");
+        let mut df = df!("a" => [1i64]).unwrap();
+        write_csv(&mut df, &target).unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "a\n1\n");
+    }
+
+    #[test]
+    fn write_csv_reports_a_parent_that_is_a_file() {
+        // `create_dir_all` cannot turn a regular file into a directory, and the error
+        // has to reach the caller rather than being swallowed into a bare write error.
+        let dir = tempfile::TempDir::new().unwrap();
+        let blocker = dir.path().join("notadir");
+        std::fs::write(&blocker, "x").unwrap();
+        let mut df = df!("a" => [1i64]).unwrap();
+        assert!(write_csv(&mut df, &blocker.join("out.csv")).is_err());
     }
 
     #[test]
