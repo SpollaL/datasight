@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.10.0] - 2026-08-23
 
 ### Added
 - `w` writes the current view to a CSV file. The export contains the rows as filtered, sorted and grouped on screen, so what you see is what lands in the file. The prompt suggests a name derived from the source, appends `.csv` when it is missing, expands a leading `~`, creates missing directories in the destination, and warns before overwriting an existing file. Exports are always local: viewing an `az://` or `s3://` file suggests a local name, and typing a remote destination is flagged in the prompt and refused before any file is touched. The write is staged through a temporary file and renamed into place, so a failed export never damages the file it was replacing.
