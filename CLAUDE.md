@@ -45,9 +45,10 @@ When implementing a new feature that changes keybindings, adds modes, or modifie
 
 Start every app in a test with `start_app` (or `launch` for a full shell command such as a
 stdin pipe). Both respawn the pane and poll until the TUI has actually painted — never send
-keys after a bare `sleep`, because datasight ignores ctrl-c and `q` is ignored in browse mode
-while a file is open, so a previous app can still own the screen and the assertions will read
-the wrong frame.
+keys after a bare `sleep`, because datasight ignores ctrl-c and every prompt that accepts
+typed text (search, filter, export, browse find) takes `q` as a character rather than as a
+quit, so a previous app can still own the screen and the assertions will read the wrong
+frame.
 
 ## Architecture
 
@@ -93,7 +94,7 @@ Source files under `src/`:
 
 - **`mod.rs`** — `FileBrowser` trait, `Entry`, `BrowserError`, `build_backend`, `load_file_for_browser`
 - **`app.rs`** — `BrowserApp` state, `Focus` enum (`Browser`/`Viewer`), navigation methods
-- **`events.rs`** — `run_browser_app` event loop; `Tab` toggles focus, `ctrl-e` toggles sidebar, `Esc` ascends
+- **`events.rs`** — `run_browser_app` event loop; `Tab` toggles focus, `ctrl-e` toggles sidebar, `Esc` ascends, `/` opens the find prompt, `q` quits from either pane
 - **`ui.rs`** — `browser_ui` split-pane renderer, `browser_shortcut_bar` (context-aware 1-row hint bar)
 - **`download.rs`** — Saving a remote object to a local file: `DownloadPrompt` state, `resolve_dest` (pure: `~` expansion, directory → keep the remote name), `download_to` (the only part touching network + filesystem), and the bottom-bar `prompt_line`
 - **`find.rs`** — Fuzzy filtering of the listing: `FindPrompt` state, `rank` (pure: subsequence match, word-boundary and consecutive-run bonuses, gap penalties, smart case) returning `Match { index, score, positions }`, and the bottom-bar `prompt_line`. Hand-rolled on purpose — no matcher crate — and `positions` are char indices so `ui.rs` can highlight without byte arithmetic

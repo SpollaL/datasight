@@ -96,10 +96,10 @@ LAUNCHES=0
 
 # launch: run CMD in the app pane and block until its TUI has painted.
 #
-# The pane is respawned rather than interrupted. datasight ignores ctrl-c, and in
-# browse mode `q` is ignored while a file is open (browser/events.rs), so neither
-# reliably dismisses the previous app — it can still be running and repainting
-# when the next one is launched.
+# The pane is respawned rather than interrupted. datasight ignores ctrl-c, and any
+# prompt that accepts typed text — search, filter, export, browse find — takes `q`
+# as a character, so neither reliably dismisses the previous app: it can still be
+# running and repainting when the next one is launched.
 #
 # Both waits poll rather than sleeping a fixed amount. The fixed sleep this
 # replaces was the cause of intermittent failures under load: keystrokes arrived
