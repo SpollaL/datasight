@@ -96,10 +96,10 @@ LAUNCHES=0
 
 # launch: run CMD in the app pane and block until its TUI has painted.
 #
-# The pane is respawned rather than interrupted. datasight ignores ctrl-c, and in
-# browse mode `q` is ignored while a file is open (browser/events.rs), so neither
-# reliably dismisses the previous app — it can still be running and repainting
-# when the next one is launched.
+# The pane is respawned rather than interrupted. datasight ignores ctrl-c, and any
+# prompt that accepts typed text — search, filter, export, browse find — takes `q`
+# as a character, so neither reliably dismisses the previous app: it can still be
+# running and repainting when the next one is launched.
 #
 # Both waits poll rather than sleeping a fixed amount. The fixed sleep this
 # replaces was the cause of intermittent failures under load: keystrokes arrived
@@ -202,6 +202,24 @@ assert_file_head() {
     FAIL=$((FAIL + 1))
     FAILURES+=("[$label] first line of $file missing '$pattern'")
   fi
+}
+
+# assert_exited: the app left the alternate screen — no TUI frame is on the pane
+# any more. Polls, because restoring the terminal takes a beat. Asserting a quit
+# needs this shape: every other assertion reads a frame that is still up.
+assert_exited() {
+  local label="$1" deadline=$((SECONDS + 5))
+  while [ "$SECONDS" -le "$deadline" ]; do
+    if ! cap | grep -qE '[╭┌]'; then
+      echo "  PASS [$label]"
+      PASS=$((PASS + 1))
+      return
+    fi
+    sleep 0.05
+  done
+  echo "  FAIL [$label] — the TUI is still on screen"
+  FAIL=$((FAIL + 1))
+  FAILURES+=("[$label] TUI still on screen")
 }
 
 # ── Suite A: File format loading ───────────────────────────────────────────────
@@ -939,13 +957,17 @@ tmux send-keys -t "$APP_PANE" C-e; sleep 0.30
 assert_contains "X4/browser-shown-again" "wide.csv"
 send "q" 0.20
 
-# X5: ctrl-h brings focus back to browser (browser visible)
-# "wide.csv" is only rendered when the browser pane is on screen.
+# X5: tab brings focus back to the browser.
+#
+# "Find" is on the shortcut bar only while the browser pane holds focus, so it is
+# what proves the switch happened. This case used to send ctrl-h and assert on
+# "wide.csv", which passed for the wrong reason twice over: there is no ctrl-h
+# binding (tab is the toggle), and the listing is on screen under either focus.
 start_app "browse tests/fixtures/"
-enter 0.4  # open file, focus on viewer
-tmux send-keys -t "$APP_PANE" C-h; sleep 0.20
-send "j" 0.15
-assert_contains "X5/browser-focused" "wide.csv"
+enter 0.4  # open file, focus moves to the viewer
+assert_not_contains "X5/viewer-focused" "Find"
+key Tab 0.20
+assert_contains "X5/browser-focused" "Find"
 send "q" 0.20
 
 # X6: browse with no path arg opens current dir
@@ -985,6 +1007,73 @@ send "q" 0.20
 start_app "browse ."
 send "d" 0.30
 assert_contains "X9/dir-download-refused" "not directories"
+send "q" 0.20
+
+# X10: / opens the find prompt — it takes over the bottom bar, so the prompt's
+# own hints are the only exit sign on screen.
+start_app "browse tests/fixtures/"
+send "/" 0.20
+assert_contains "X10/find-prompt-open" "Esc cancel"
+esc
+send "q" 0.20
+
+# X11: typing narrows the listing to the matches. "wide" is a subsequence of no
+# other fixture name.
+start_app "browse tests/fixtures/"
+send "/" 0.20
+send "wide" 0.30
+assert_contains     "X11/match-kept"    "wide.csv"
+assert_not_contains "X11/rest-dropped"  "orders.csv"
+
+# X12: Esc closes the prompt and restores the full listing (same session — this
+# is what the user does after finding the file they wanted).
+esc
+assert_contains "X12/listing-restored" "orders.csv"
+assert_contains "X12/shortcut-bar-back" "Find"
+send "q" 0.20
+
+# X13: Enter opens the top match straight out of the prompt.
+start_app "browse tests/fixtures/"
+send "/" 0.20
+send "wide" 0.30
+enter 0.6
+# The header is clipped to the width of the viewer sub-pane, so match the stem
+# only — it is still unique to wide.csv, which is what the case is proving.
+assert_contains "X13/enter-opens-the-match" "very_long_colum"
+send "q" 0.20
+
+# X14: while the prompt is open the browse bindings are query text — q must not
+# quit, d must not act, T must not open the theme picker. None of the three is a
+# subsequence of any fixture name, so the prompt reports no matches instead.
+start_app "browse tests/fixtures/"
+send "/" 0.20
+send "qdT" 0.30
+assert_contains     "X14/prompt-survives-qdT" "no matches"
+assert_not_contains "X14/d-not-handled"       "already a local file"
+assert_not_contains "X14/T-not-handled"       "nord"
+esc
+assert_contains "X14/listing-restored" "orders.csv"
+send "q" 0.20
+
+# X15: q quits from the browser pane with a file already open — the bug this
+# case exists to pin. The binding used to be gated on "no viewer loaded", which
+# left the browser pane with no way out at all.
+start_app "browse tests/fixtures/"
+enter 0.5      # open a file; focus moves to the viewer
+key Tab 0.20   # back to the browser pane
+send "q" 0.30
+assert_exited "X15/q-quits-from-the-browser-pane"
+
+# X16: ctrl-n walks the matches — j/k are query text in the prompt. "sample"
+# scores sample.txt, sample.json and sample_binary.png equally (one consecutive
+# run from the start), so the shorter-name tie-break puts sample.txt on top and
+# one step down lands on sample.json.
+start_app "browse tests/fixtures/"
+send "/" 0.20
+send "sample" 0.30
+tmux send-keys -t "$APP_PANE" C-n; sleep 0.20
+enter 0.6
+assert_contains "X16/second-match-opened" "pretty JSON"
 send "q" 0.20
 
 # ── Suite Y: Theme picker ─────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 pub mod app;
 pub mod download;
 pub mod events;
+pub mod find;
 pub mod local;
 pub mod ui;
 

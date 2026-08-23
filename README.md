@@ -26,7 +26,7 @@
 - Custom delimiter support via `-d` flag — works with pipe-separated, semicolon-separated, and any single-character delimiter
 - Pipe-friendly — reads from stdin with automatic format detection (CSV, JSON, NDJSON)
 - Viewport-windowed rendering — stays fast on large files
-- File browser (`browse`) — navigate local directories and Azure Blob / S3 buckets, open files directly into the viewer, download cloud objects locally (`d`)
+- File browser (`browse`) — navigate local directories and Azure Blob / S3 buckets, fuzzy-find in the listing (`/`), open files directly into the viewer, download cloud objects locally (`d`)
 
 ## Install
 
@@ -110,8 +110,17 @@ Azure reads `AZURE_STORAGE_CONNECTION_STRING` or individual `AZURE_STORAGE_ACCOU
 | `Tab` | Switch focus browser ↔ viewer |
 | `ctrl-e` | Toggle browser sidebar |
 | `d` | Download the selected cloud file locally (`az://` / `s3://` only) |
+| `/` | Fuzzy-find in the listing |
 | `T` | Open theme picker |
-| `q` | Quit (when no file is open) |
+| `q` | Quit |
+
+`/` filters the listing as you type: the query matches anywhere in a name, in order,
+so `ordcsv` finds `orders.csv`. Matches are ranked — hits on word boundaries and
+runs of consecutive characters score highest — and the matched characters are
+highlighted. A lowercase query is case-insensitive; one uppercase character makes the
+whole query case-sensitive. `Enter` opens the highlighted match, `Esc` cancels and
+restores the full listing, arrows (or `ctrl-n` / `ctrl-p`) move through the matches,
+and `ctrl-u` clears the query.
 
 `d` prompts for a destination, pre-filled with the remote file name. `~` expands to
 your home directory, and a destination ending in `/` (or an existing directory) keeps

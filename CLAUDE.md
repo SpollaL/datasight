@@ -45,9 +45,10 @@ When implementing a new feature that changes keybindings, adds modes, or modifie
 
 Start every app in a test with `start_app` (or `launch` for a full shell command such as a
 stdin pipe). Both respawn the pane and poll until the TUI has actually painted — never send
-keys after a bare `sleep`, because datasight ignores ctrl-c and `q` is ignored in browse mode
-while a file is open, so a previous app can still own the screen and the assertions will read
-the wrong frame.
+keys after a bare `sleep`, because datasight ignores ctrl-c and every prompt that accepts
+typed text (search, filter, export, browse find) takes `q` as a character rather than as a
+quit, so a previous app can still own the screen and the assertions will read the wrong
+frame.
 
 ## Architecture
 
@@ -93,9 +94,10 @@ Source files under `src/`:
 
 - **`mod.rs`** — `FileBrowser` trait, `Entry`, `BrowserError`, `build_backend`, `load_file_for_browser`
 - **`app.rs`** — `BrowserApp` state, `Focus` enum (`Browser`/`Viewer`), navigation methods
-- **`events.rs`** — `run_browser_app` event loop; `Tab` toggles focus, `ctrl-e` toggles sidebar, `Esc` ascends
+- **`events.rs`** — `run_browser_app` event loop; `Tab` toggles focus, `ctrl-e` toggles sidebar, `Esc` ascends, `/` opens the find prompt, `q` quits from either pane
 - **`ui.rs`** — `browser_ui` split-pane renderer, `browser_shortcut_bar` (context-aware 1-row hint bar)
 - **`download.rs`** — Saving a remote object to a local file: `DownloadPrompt` state, `resolve_dest` (pure: `~` expansion, directory → keep the remote name), `download_to` (the only part touching network + filesystem), and the bottom-bar `prompt_line`
+- **`find.rs`** — Fuzzy filtering of the listing: `FindPrompt` state, `rank` (pure: subsequence match, word-boundary and consecutive-run bonuses, gap penalties, smart case) returning `Match { index, score, positions }`, and the bottom-bar `prompt_line`. Hand-rolled on purpose — no matcher crate — and `positions` are char indices so `ui.rs` can highlight without byte arithmetic
 - **`local.rs`** — `LocalBackend` (always compiled)
 - **`azure.rs`** — `AzureBackend` behind `--features azure` (object_store + tokio)
 - **`s3.rs`** — `S3Backend` behind `--features aws`
@@ -106,6 +108,8 @@ Source files under `src/`:
 - `e` is taken by the viewer's stats toggle; browser sidebar uses `ctrl-e`
 - `BrowserApp::download` is checked first in `run_browser_app` — the destination is free text, so the prompt has to consume keys before any single-key browse binding (including `T` and `ctrl-e`) sees them
 - `d` is remote-only: `begin_download` refuses local entries and directories with a status message instead of opening the prompt
+- `BrowserApp::find` is checked right after `download` and for the same reason — the query is free text, so `q`, `d` and `T` must reach it as characters. Any future prompt goes in that same block, before the single-key bindings
+- `BrowserApp::cursor` indexes `matches`, **not** `entries`: resolve it through `selected_entry()` / `selected_index()`, never `entries[cursor]`. With no query active `matches` is still every entry, so the two only diverge while filtering
 - Any new viewer mode that accepts typed text must be added to `App::is_typing`, or browse mode swallows `T` from the input to open the theme picker
 - Azure: `object_store::MicrosoftAzureBuilder::from_env()` ignores `AZURE_STORAGE_CONNECTION_STRING`; `azure.rs` parses it manually. HTTP `BlobEndpoint` values (Azurite) require `with_allow_http(true)`.
 
@@ -119,4 +123,5 @@ Source files under `src/`:
 | `Tab` | Toggle focus browser ↔ viewer |
 | `ctrl-e` | Toggle browser sidebar |
 | `d` | Download the selected cloud object to a local file (`az://` / `s3://` only) |
-| `q` | Quit (only when no viewer loaded) |
+| `/` | Fuzzy-find in the listing (live; `Enter` opens, `Esc` cancels, `ctrl-n`/`ctrl-p` or arrows move, `ctrl-u` clears) |
+| `q` | Quit, from either pane, with or without a file open |

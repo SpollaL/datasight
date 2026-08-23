@@ -1,5 +1,6 @@
 use crate::app::App;
 use crate::browser::download::{self, DownloadPrompt};
+use crate::browser::find::{self, FindPrompt, Match};
 use crate::browser::{is_remote, Entry, FileBrowser};
 use crate::text_viewer::TextApp;
 use crate::theme::Theme;
@@ -39,6 +40,10 @@ impl Viewer {
 pub struct BrowserApp {
     pub backend: Box<dyn FileBrowser>,
     pub entries: Vec<Entry>,
+    /// The entries currently on screen, in display order — every entry when no
+    /// query is active, the ranked survivors when one is. `cursor` indexes this,
+    /// not `entries`, so use [`BrowserApp::selected_entry`] to resolve it.
+    pub matches: Vec<Match>,
     pub cursor: usize,
     pub cwd: String,
     pub viewer: Option<Viewer>,
@@ -51,6 +56,9 @@ pub struct BrowserApp {
     /// Pending download, gated by an `Option` like `picker`. `Some` means the
     /// destination prompt owns the keyboard.
     pub download: Option<DownloadPrompt>,
+    /// Live fuzzy filter, gated the same way. `Some` means the query owns the
+    /// keyboard and `matches` is narrowed to what it selects.
+    pub find: Option<FindPrompt>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -66,6 +74,7 @@ impl BrowserApp {
             Err(e) => (Vec::new(), Some(e.to_string())),
         };
         Self {
+            matches: find::rank(&entries, ""),
             backend,
             entries,
             cursor: 0,
@@ -78,11 +87,22 @@ impl BrowserApp {
             theme,
             picker: None,
             download: None,
+            find: None,
         }
     }
 
+    /// The entry under the cursor, resolved through the active filter.
+    pub fn selected_entry(&self) -> Option<&Entry> {
+        self.entries.get(self.selected_index()?)
+    }
+
+    /// Where the cursor points in `entries` — the index a filter maps it back to.
+    fn selected_index(&self) -> Option<usize> {
+        self.matches.get(self.cursor).map(|m| m.index)
+    }
+
     pub fn navigate_down(&mut self) {
-        if self.cursor + 1 < self.entries.len() {
+        if self.cursor + 1 < self.matches.len() {
             self.cursor += 1;
         }
     }
@@ -93,7 +113,7 @@ impl BrowserApp {
 
     /// Descend into the directory at the current cursor (no-op if it's a file).
     pub fn descend(&mut self) {
-        if let Some(entry) = self.entries.get(self.cursor) {
+        if let Some(entry) = self.selected_entry() {
             if entry.is_dir() {
                 let path = entry.path.clone();
                 self.refresh_listing(path);
@@ -114,9 +134,12 @@ impl BrowserApp {
     /// Only remote files can be downloaded: a local entry is already on disk, and
     /// copying a whole prefix recursively is a different feature.
     pub fn begin_download(&mut self) {
-        let Some(entry) = self.entries.get(self.cursor) else {
+        // Resolved to an index first: borrowing `entries` directly leaves `status`
+        // free to be written in the same breath.
+        let Some(index) = self.selected_index() else {
             return;
         };
+        let entry = &self.entries[index];
         if entry.is_dir() {
             self.status = Some("Download works on files, not directories".to_string());
         } else if !is_remote(&entry.path) {
@@ -150,6 +173,62 @@ impl BrowserApp {
         });
     }
 
+    /// Open the find prompt. The listing is unchanged until something is typed.
+    pub fn open_find(&mut self) {
+        self.find = Some(FindPrompt::open());
+        self.status = None;
+    }
+
+    /// Append to the query and re-rank.
+    pub fn find_push(&mut self, c: char) {
+        if let Some(prompt) = self.find.as_mut() {
+            prompt.query.push(c);
+            self.apply_find();
+        }
+    }
+
+    /// Delete the last query char. Backspace on an empty query closes the prompt:
+    /// there is nothing left to delete, so the keystroke means "out".
+    pub fn find_backspace(&mut self) {
+        let Some(prompt) = self.find.as_mut() else {
+            return;
+        };
+        if prompt.query.pop().is_some() {
+            self.apply_find();
+        } else {
+            self.close_find();
+        }
+    }
+
+    /// Clear the query but stay in the prompt.
+    pub fn find_clear(&mut self) {
+        if let Some(prompt) = self.find.as_mut() {
+            prompt.query.clear();
+            self.apply_find();
+        }
+    }
+
+    /// Close the prompt and restore the full listing, leaving the cursor on
+    /// whatever was highlighted. Both `Enter` and `Esc` end here — the entry you
+    /// found stays under the cursor either way, and only the caller decides
+    /// whether to open it.
+    pub fn close_find(&mut self) {
+        self.find = None;
+        let selected = self.selected_index();
+        self.matches = find::rank(&self.entries, "");
+        self.cursor = selected.unwrap_or(0);
+    }
+
+    /// Re-rank the listing against the current query.
+    fn apply_find(&mut self) {
+        let query = self.find.as_ref().map_or("", |p| p.query.as_str());
+        self.matches = find::rank(&self.entries, query);
+        // Back to the top on every edit: the best match for what was just typed
+        // is the one worth selecting, and the old cursor points into a list that
+        // no longer exists.
+        self.cursor = 0;
+    }
+
     fn refresh_listing(&mut self, path: String) {
         match self.backend.list(&path) {
             Ok(entries) => {
@@ -157,6 +236,9 @@ impl BrowserApp {
                 self.cwd = path;
                 self.cursor = 0;
                 self.status = None;
+                // A query belongs to the listing it was typed against.
+                self.find = None;
+                self.matches = find::rank(&self.entries, "");
             }
             Err(e) => {
                 self.status = Some(e.to_string());
@@ -449,6 +531,151 @@ mod tests {
             "a blank destination has nothing to write"
         );
         assert!(app.status.is_none());
+    }
+
+    // ── fuzzy find ────────────────────────────────────────────────────────────
+
+    fn find_app() -> BrowserApp {
+        make_app(vec![
+            file_entry("orders.csv"),
+            file_entry("sales.parquet"),
+            file_entry("notes.txt"),
+        ])
+    }
+
+    /// Type a whole query, one keystroke at a time — the way the event loop does.
+    fn type_query(app: &mut BrowserApp, query: &str) {
+        app.open_find();
+        for c in query.chars() {
+            app.find_push(c);
+        }
+    }
+
+    #[test]
+    fn test_new_shows_every_entry() {
+        let app = find_app();
+        assert_eq!(
+            app.matches.len(),
+            3,
+            "an unfiltered listing shows all of it"
+        );
+    }
+
+    #[test]
+    fn test_opening_the_prompt_does_not_filter_anything_yet() {
+        let mut app = find_app();
+        app.open_find();
+        assert_eq!(app.matches.len(), 3);
+    }
+
+    #[test]
+    fn test_query_narrows_the_listing() {
+        let mut app = find_app();
+        type_query(&mut app, "sal");
+        assert_eq!(app.matches.len(), 1);
+        assert_eq!(app.selected_entry().unwrap().name, "sales.parquet");
+    }
+
+    #[test]
+    fn test_cursor_returns_to_the_best_match_on_every_keystroke() {
+        let mut app = find_app();
+        app.open_find();
+        app.find_push('s');
+        app.navigate_down();
+        assert_eq!(app.cursor, 1);
+        app.find_push('a');
+        assert_eq!(app.cursor, 0, "a new query means a new best match");
+    }
+
+    #[test]
+    fn test_navigation_is_bounded_by_the_matches_not_the_listing() {
+        let mut app = find_app();
+        type_query(&mut app, "sal");
+        app.navigate_down();
+        assert_eq!(app.cursor, 0, "one match, nowhere to go");
+        assert_eq!(app.selected_entry().unwrap().name, "sales.parquet");
+    }
+
+    #[test]
+    fn test_closing_the_prompt_restores_the_listing_under_the_same_entry() {
+        let mut app = find_app();
+        type_query(&mut app, "sal");
+        app.close_find();
+        assert!(app.find.is_none());
+        assert_eq!(app.matches.len(), 3, "the full listing is back");
+        assert_eq!(
+            app.selected_entry().unwrap().name,
+            "sales.parquet",
+            "the entry that was found stays under the cursor"
+        );
+    }
+
+    #[test]
+    fn test_backspace_reopens_what_it_narrowed() {
+        let mut app = make_app(vec![file_entry("sales.parquet"), file_entry("sample.txt")]);
+        type_query(&mut app, "sam");
+        assert_eq!(app.matches.len(), 1, "only sample has an m");
+        app.find_backspace();
+        assert_eq!(app.matches.len(), 2, "sa is back to matching both");
+    }
+
+    #[test]
+    fn test_backspace_on_an_empty_query_closes_the_prompt() {
+        let mut app = find_app();
+        app.open_find();
+        app.find_backspace();
+        assert!(app.find.is_none(), "nothing left to delete means 'out'");
+        assert_eq!(app.matches.len(), 3);
+    }
+
+    #[test]
+    fn test_clearing_the_query_keeps_the_prompt_open() {
+        let mut app = find_app();
+        type_query(&mut app, "sal");
+        app.find_clear();
+        assert!(
+            app.find.is_some(),
+            "ctrl-u clears the query, not the prompt"
+        );
+        assert_eq!(app.matches.len(), 3);
+    }
+
+    #[test]
+    fn test_a_query_matching_nothing_leaves_no_selection() {
+        let mut app = find_app();
+        type_query(&mut app, "zzz");
+        assert!(app.matches.is_empty());
+        assert!(
+            app.selected_entry().is_none(),
+            "nothing shown means nothing selected"
+        );
+    }
+
+    #[test]
+    fn test_descending_clears_the_filter() {
+        let mut app = make_app(vec![dir_entry("subdir")]);
+        type_query(&mut app, "sub");
+        app.descend();
+        assert!(app.find.is_none(), "a query belongs to one listing");
+        assert_eq!(app.cwd, "/test/subdir");
+    }
+
+    #[test]
+    fn test_download_targets_the_filtered_selection() {
+        let mut app = BrowserApp::new(
+            Box::new(StubBackend {
+                entries: vec![remote_entry("orders.csv"), remote_entry("sales.csv")],
+            }),
+            "az://c/data/".to_string(),
+            crate::theme::default_theme(),
+        );
+        type_query(&mut app, "sal");
+        app.begin_download();
+        assert_eq!(
+            app.download.expect("prompt should open").source,
+            "az://c/data/sales.csv",
+            "the download follows the filter, not the raw listing index"
+        );
     }
 
     #[test]
