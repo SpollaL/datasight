@@ -21,6 +21,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
+      # cargo test never opens a terminal, so it cannot see #30: with stdin piped,
+      # crossterm reads keys from /dev/tty, and on macOS that failed at startup.
+      # `script` provides the pty; the data comes down the pipe, `q` through the tty.
+      - name: Piped stdin smoke test
+        if: runner.os == 'macOS'
+        timeout-minutes: 2
+        run: |
+          cargo build
+          (sleep 5; printf q) | script -q /dev/null sh -c \
+            'stty rows 40 cols 120; cat tests/fixtures/orders.json | target/debug/datasight; echo $? > rc'
+          test "$(cat rc)" = 0
 
   clippy:
     name: Clippy
