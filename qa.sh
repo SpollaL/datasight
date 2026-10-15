@@ -255,6 +255,11 @@ launch "cat tests/fixtures/orders.json | $BINARY"
 assert_contains "A/stdin-json" "order_id"
 quit
 
+# process substitution: the path is /dev/fd/N, no extension to dispatch on (#30)
+launch "$BINARY <(cat tests/fixtures/orders.json)"
+assert_contains "A/procsub-json" "order_id"
+quit
+
 # ── Suite B: Normal mode navigation ───────────────────────────────────────────
 echo ""
 echo "=== Suite B: Normal mode navigation ==="

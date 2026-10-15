@@ -116,6 +116,9 @@ pub(crate) fn load_dataframe(
             .with_json_format(JsonFormat::Json)
             .finish()?,
         "ndjson" | "jsonl" => JsonLineReader::new(std::fs::File::open(file_path)?).finish()?,
+        // No extension to go on — e.g. `<(cmd)` hands us /dev/fd/63, a pipe that can
+        // only be read once — so sniff the content the same way stdin does.
+        "" => return parse_buf(std::fs::read(file_path)?, delimiter),
         _ => {
             if let Some(sep) = delimiter {
                 csv_options(sep)
@@ -545,6 +548,17 @@ mod tests {
     #[test]
     fn test_fixture_unsupported_extension_errors() {
         assert!(load_dataframe("tests/fixtures/orders.csv.bak", None).is_err());
+    }
+
+    #[test]
+    fn test_no_extension_sniffs_content() {
+        // Stands in for `datasight <(cmd)`, whose /dev/fd/N path has no extension (#30).
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("orders");
+        std::fs::copy("tests/fixtures/orders.json", &path).unwrap();
+        let df = load_dataframe(path.to_str().unwrap(), None).expect("should sniff as JSON");
+        let expected = load_dataframe("tests/fixtures/orders.json", None).unwrap();
+        assert!(df.equals_missing(&expected));
     }
 
     #[test]

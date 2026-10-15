@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Piping data into datasight works on macOS (#30). Any piped input — `cat data.csv | datasight`, an HTTP response, anything — died at startup with `Failed to initialize input reader`: with stdin taken by the pipe, keys are read from `/dev/tty`, and the default event source waits on it through kqueue, which macOS does not support for terminals. crossterm's `use-dev-tty` feature reads the tty with a source that works there. CI now runs a piped-stdin smoke test on macOS inside a pty, since `cargo test` never opens a terminal and could not catch this.
+- `datasight <(cmd)` loads the data instead of failing with `Unsupported file format: .` A path without an extension (process substitution hands over `/dev/fd/N`) is now identified from its content, the same way stdin is: `[` is JSON, `{` is NDJSON, anything else is CSV.
+
 ## [0.10.0] - 2026-08-23
 
 ### Added
