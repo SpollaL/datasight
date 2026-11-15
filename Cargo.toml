@@ -8,7 +8,7 @@ repository = "https://github.com/SpollaL/datasight"
 rust-version = "1.75"
 keywords = ["csv", "parquet", "tui", "dataframe", "cli"]
 categories = ["command-line-utilities", "visualization", "development-tools"]
-exclude = [".github", "demo.tape", "tests/fixtures/*.parquet", "tests/fixtures/*.ndjson"]
+exclude = [".github", "manual", "demo.tape", "tests/fixtures/*.parquet", "tests/fixtures/*.ndjson"]
 
 [features]
 azure = ["dep:object_store", "object_store/azure", "dep:tokio"]

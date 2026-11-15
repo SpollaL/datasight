@@ -1,0 +1,15 @@
+# Summary
+
+- [Welcome](index.md)
+- [Install](install.md)
+- [Opening data](opening-data.md)
+- [Moving around](moving-around.md)
+- [Finding rows](finding-rows.md)
+- [Sort and group](sort-and-group.md)
+- [Plots](plots.md)
+- [Copy and export](copy-and-export.md)
+- [Files and the cloud](browse.md)
+- [Themes](themes.md)
+- [Agents and scripts](agents.md)
+- [Cheat sheet](cheat-sheet.md)
+- [Troubleshooting](troubleshooting.md)

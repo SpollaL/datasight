@@ -1,0 +1,121 @@
+/* Catppuccin for mdBook: Latte replaces "light", Mocha (datasight's default theme)
+   replaces "coal". The other built-in themes are hidden from the picker. */
+
+.light {
+    --bg: #eff1f5;
+    --fg: #4c4f69;
+    --sidebar-bg: #e6e9ef;
+    --sidebar-fg: #5c5f77;
+    --sidebar-non-existant: #9ca0b0;
+    --sidebar-active: #1e66f5;
+    --sidebar-spacer: #ccd0da;
+    --sidebar-header-border-color: #1e66f5;
+    --scrollbar: #acb0be;
+    --icons: #8c8fa1;
+    --icons-hover: #4c4f69;
+    --links: #1e66f5;
+    --inline-code-color: #8839ef;
+    --theme-popup-bg: #e6e9ef;
+    --theme-popup-border: #ccd0da;
+    --theme-hover: #ccd0da;
+    --quote-bg: #e6e9ef;
+    --quote-border: #ccd0da;
+    --table-border-color: #ccd0da;
+    --table-header-bg: #dce0e8;
+    --table-alternate-bg: #e6e9ef;
+    --searchbar-border-color: #ccd0da;
+    --searchbar-bg: #ffffff;
+    --searchbar-fg: #4c4f69;
+    --searchbar-shadow-color: #bcc0cc;
+    --searchresults-header-fg: #6c6f85;
+    --searchresults-border-color: #ccd0da;
+    --searchresults-li-bg: #e6e9ef;
+    --search-mark-bg: #f9e2af;
+    --code-bg: #e6e9ef;
+    --accent: #8839ef;
+    --kbd-bg: #ffffff;
+    --kbd-border: #bcc0cc;
+}
+
+.coal {
+    --bg: #1e1e2e;
+    --fg: #cdd6f4;
+    --sidebar-bg: #181825;
+    --sidebar-fg: #bac2de;
+    --sidebar-non-existant: #6c7086;
+    --sidebar-active: #89b4fa;
+    --sidebar-spacer: #313244;
+    --sidebar-header-border-color: #89b4fa;
+    --scrollbar: #45475a;
+    --icons: #7f849c;
+    --icons-hover: #cdd6f4;
+    --links: #89b4fa;
+    --inline-code-color: #fab387;
+    --theme-popup-bg: #181825;
+    --theme-popup-border: #313244;
+    --theme-hover: #313244;
+    --quote-bg: #181825;
+    --quote-border: #313244;
+    --table-border-color: #313244;
+    --table-header-bg: #313244;
+    --table-alternate-bg: #181825;
+    --searchbar-border-color: #45475a;
+    --searchbar-bg: #313244;
+    --searchbar-fg: #cdd6f4;
+    --searchbar-shadow-color: #11111b;
+    --searchresults-header-fg: #a6adc8;
+    --searchresults-border-color: #45475a;
+    --searchresults-li-bg: #181825;
+    --search-mark-bg: #45475a;
+    --code-bg: #181825;
+    --accent: #cba6f7;
+    --kbd-bg: #313244;
+    --kbd-border: #45475a;
+}
+
+#mdbook-theme-rust,
+#mdbook-theme-navy,
+#mdbook-theme-ayu {
+    display: none;
+}
+
+/* Terminal flavour: monospace headings and title, accent rule under each page title. */
+h1, h2, h3, .menu-title {
+    font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing: -0.02em;
+}
+.content main > h1:first-child {
+    padding-bottom: 0.3em;
+    border-bottom: 3px solid var(--accent);
+}
+
+.light pre > code.hljs,
+.coal pre > code.hljs {
+    background: var(--code-bg);
+    border-radius: 6px;
+}
+
+table {
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+/* Keys look like keys. */
+kbd {
+    display: inline-block;
+    min-width: 1.4em;
+    padding: 0.05em 0.45em;
+    font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    line-height: 1.5;
+    text-align: center;
+    color: var(--fg);
+    background: var(--kbd-bg);
+    border: 1px solid var(--kbd-border);
+    border-bottom-width: 3px;
+    border-radius: 5px;
+}
+
+.content img {
+    border-radius: 8px;
+}

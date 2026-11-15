@@ -1,0 +1,11 @@
+[book]
+title = "datasight manual"
+language = "en"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "coal"
+additional-css = ["catppuccin.css"]
+git-repository-url = "https://github.com/SpollaL/datasight"
+edit-url-template = "https://github.com/SpollaL/datasight/edit/main/manual/{path}"
+site-url = "/datasight/"
