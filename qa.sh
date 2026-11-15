@@ -130,16 +130,21 @@ quit() {
   send "q" 0.20
 }
 
+# Polls for up to 2s: a single capture after the caller's fixed sleep can beat the
+# repaint on a loaded CI runner. A pass returns as soon as the frame shows it.
 assert_contains() {
-  local label="$1" pattern="$2"
-  if cap | grep -q "$pattern"; then
-    echo "  PASS [$label]"
-    PASS=$((PASS + 1))
-  else
-    echo "  FAIL [$label] — expected: '$pattern'"
-    FAIL=$((FAIL + 1))
-    FAILURES+=("[$label] expected '$pattern'")
-  fi
+  local label="$1" pattern="$2" i
+  for i in $(seq 40); do
+    if cap | grep -q "$pattern"; then
+      echo "  PASS [$label]"
+      PASS=$((PASS + 1))
+      return
+    fi
+    sleep 0.05
+  done
+  echo "  FAIL [$label] — expected: '$pattern'"
+  FAIL=$((FAIL + 1))
+  FAILURES+=("[$label] expected '$pattern'")
 }
 
 assert_not_contains() {
