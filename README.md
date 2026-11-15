@@ -27,6 +27,7 @@
 - Pipe-friendly — reads from stdin with automatic format detection (CSV, JSON, NDJSON)
 - Viewport-windowed rendering — stays fast on large files
 - File browser (`browse`) — navigate local directories and Azure Blob / S3 buckets, fuzzy-find in the listing (`/`), open files directly into the viewer, download cloud objects locally (`d`)
+- Agent control (`datasight ctl`) — an agent or a script in another terminal can read the table you have open and filter, sort, move the cursor or export it while you watch; `--skill` prints a Claude Code skill for it
 
 ## Install
 
