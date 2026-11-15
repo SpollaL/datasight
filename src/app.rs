@@ -296,11 +296,21 @@ impl<'a> FilterQuery<'a> {
                     .neq(lit(self.rest.to_string()));
             }
         }
+        // Strict, so a malformed pattern such as `(` is an error rather than
+        // silently matching nothing.
         col(col_name)
             .cast(DataType::String)
             .str()
-            .contains(lit(self.raw), false)
+            .contains(lit(self.raw), true)
     }
+}
+
+/// The last line of a polars error. Regex errors span several lines (pattern, caret,
+/// reason) and the bars that show them are one row; the reason is the last line.
+fn error_line(e: &PolarsError) -> String {
+    let msg = e.to_string();
+    let last = msg.lines().last().unwrap_or_default().trim();
+    last.strip_prefix("error: ").unwrap_or(last).to_string()
 }
 
 fn apply_sorts(
@@ -407,6 +417,45 @@ impl App {
         self.search.cursor = 0;
     }
 
+    /// Commit `query` as a filter on `col_name`. The only way a filter is added.
+    ///
+    /// The filter is tried on a zero-row frame first: one that fails inside
+    /// `update_filter` makes its whole stage fall back to the unfiltered frame, so every
+    /// other filter would silently vanish from the view. Both failure kinds (a dtype
+    /// mismatch, a malformed regex) surface at plan time, so zero rows is enough.
+    pub fn add_filter(&mut self, col_name: &str, query: &str) -> Result<(), String> {
+        let fq = match FilterQuery::parse(query) {
+            Some(fq) if !query.trim().is_empty() => fq,
+            _ => return Err(format!("incomplete filter '{}'", query.trim())),
+        };
+        // Same routing as `update_filter`: a raw column is filtered before any group-by.
+        let probe = if self.df.column(col_name).is_ok() {
+            self.df.clear()
+        } else {
+            self.view.clear()
+        };
+        if let Some(err) = fq.validate(col_name, &probe) {
+            return Err(err);
+        }
+        probe
+            .lazy()
+            .filter(fq.build_expr(col_name))
+            .collect()
+            .map_err(|e| format!("Filter error: {}", error_line(&e)))?;
+        let duplicate = self
+            .filter
+            .filters
+            .iter()
+            .any(|(c, q)| c == col_name && q == query);
+        if !duplicate {
+            self.filter
+                .filters
+                .push((col_name.to_string(), query.to_string()));
+            self.update_filter();
+        }
+        Ok(())
+    }
+
     /// Rebuilds `self.view` from `self.df` through the pipeline
     /// raw → filter(raw-cols) → [groupby] → filter(agg-cols + in-progress) → sort.
     ///
@@ -485,7 +534,7 @@ impl App {
         let filtered = match base.clone().lazy().filter(agg_mask).collect() {
             Ok(df) => df,
             Err(e) => {
-                self.filter.error = Some(format!("Filter error: {}", e));
+                self.filter.error = Some(format!("Filter error: {}", error_line(&e)));
                 base
             }
         };
