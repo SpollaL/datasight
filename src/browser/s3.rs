@@ -1,4 +1,4 @@
-use crate::browser::{classify, BrowserError, Entry, EntryKind, FileBrowser};
+use crate::browser::{classify, fetch, BrowserError, Entry, EntryKind, FileBrowser, Progress};
 use object_store::aws::AmazonS3Builder;
 use object_store::path::Path;
 use object_store::ObjectStore;
@@ -79,7 +79,7 @@ impl FileBrowser for S3Backend {
         Ok(entries)
     }
 
-    fn download_bytes(&self, path: &str) -> Result<Vec<u8>, BrowserError> {
+    fn download_bytes(&self, path: &str, progress: &Progress) -> Result<Vec<u8>, BrowserError> {
         let rest = path.strip_prefix("s3://").unwrap_or(path);
         let obj_path_str = rest
             .strip_prefix(&self.bucket)
@@ -87,11 +87,7 @@ impl FileBrowser for S3Backend {
             .trim_start_matches('/');
         let obj_path = Path::from(obj_path_str);
 
-        let bytes = self
-            .rt
-            .block_on(async { self.store.get(&obj_path).await?.bytes().await })
-            .map_err(|e| BrowserError::Network(e.to_string()))?;
-
-        Ok(bytes.to_vec())
+        self.rt
+            .block_on(fetch::get_all(Arc::clone(&self.store), &obj_path, progress))
     }
 }

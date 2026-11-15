@@ -2,6 +2,7 @@ pub mod app;
 pub mod download;
 pub mod events;
 pub mod find;
+pub mod loading;
 pub mod local;
 pub mod ui;
 
@@ -11,20 +12,37 @@ pub mod azure;
 #[cfg(feature = "aws")]
 pub mod s3;
 
+#[cfg(any(feature = "azure", feature = "aws"))]
+mod fetch;
+
 use polars::prelude::SerReader;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 
-pub trait FileBrowser {
+/// `Send + Sync` because a file is loaded on a worker thread while the UI thread
+/// draws its progress bar (see [`loading`]).
+pub trait FileBrowser: Send + Sync {
     fn list(&self, prefix: &str) -> Result<Vec<Entry>, BrowserError>;
 
-    /// Download raw bytes for a single file path. Default returns an error.
-    /// Cloud backends override this.
-    fn download_bytes(&self, path: &str) -> Result<Vec<u8>, BrowserError> {
+    /// Download raw bytes for a single file path, reporting into `progress` and
+    /// giving up once it is cancelled. Default returns an error; cloud backends
+    /// override this.
+    fn download_bytes(&self, path: &str, _progress: &Progress) -> Result<Vec<u8>, BrowserError> {
         Err(BrowserError::Other(format!(
             "download_bytes not implemented for path: {}",
             path
         )))
     }
+}
+
+/// Shared by a download and the screen drawing its progress bar: the download
+/// sets `total` once it knows the size and adds to `done` as bytes land; the
+/// screen sets `cancel` to stop it.
+#[derive(Debug, Default)]
+pub struct Progress {
+    pub done: AtomicUsize,
+    pub total: AtomicUsize,
+    pub cancel: AtomicBool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,9 +167,12 @@ pub fn build_backend(path: &str) -> Result<(Box<dyn FileBrowser>, String), Strin
 pub(crate) fn load_file_for_browser(
     path: &str,
     backend: &dyn FileBrowser,
+    progress: &Progress,
 ) -> Result<(polars::prelude::DataFrame, String), Box<dyn std::error::Error>> {
     if is_remote(path) {
-        let bytes = backend.download_bytes(path).map_err(|e| e.to_string())?;
+        let bytes = backend
+            .download_bytes(path, progress)
+            .map_err(|e| e.to_string())?;
         let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
         let df = if ext == "parquet" {
             polars::prelude::ParquetReader::new(std::io::Cursor::new(bytes)).finish()?

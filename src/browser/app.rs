@@ -1,10 +1,13 @@
 use crate::app::App;
 use crate::browser::download::{self, DownloadPrompt};
 use crate::browser::find::{self, FindPrompt, Match};
-use crate::browser::{is_remote, Entry, FileBrowser};
+use crate::browser::loading::{Done, Loading};
+use crate::browser::{is_remote, Entry, FileBrowser, Progress};
 use crate::text_viewer::TextApp;
 use crate::theme::Theme;
 use crate::theme_picker::ThemePicker;
+use std::sync::mpsc::TryRecvError;
+use std::sync::Arc;
 
 /// One of the two viewer types loaded into the right-hand pane. The
 /// dataframe variant wraps the existing tabular viewer; the text variant
@@ -38,7 +41,8 @@ impl Viewer {
 }
 
 pub struct BrowserApp {
-    pub backend: Box<dyn FileBrowser>,
+    /// `Arc` so a [`Loading`] worker can hold it while the UI keeps listing.
+    pub backend: Arc<dyn FileBrowser>,
     pub entries: Vec<Entry>,
     /// The entries currently on screen, in display order — every entry when no
     /// query is active, the ranked survivors when one is. `cursor` indexes this,
@@ -59,6 +63,9 @@ pub struct BrowserApp {
     /// Live fuzzy filter, gated the same way. `Some` means the query owns the
     /// keyboard and `matches` is narrowed to what it selects.
     pub find: Option<FindPrompt>,
+    /// A file being opened or saved in the background. `Some` means its progress
+    /// bar fills the viewer pane and it owns the keyboard (Esc cancels, q quits).
+    pub loading: Option<Loading>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -75,7 +82,7 @@ impl BrowserApp {
         };
         Self {
             matches: find::rank(&entries, ""),
-            backend,
+            backend: backend.into(),
             entries,
             cursor: 0,
             cwd: root_path,
@@ -88,6 +95,7 @@ impl BrowserApp {
             picker: None,
             download: None,
             find: None,
+            loading: None,
         }
     }
 
@@ -159,7 +167,7 @@ impl BrowserApp {
         let Some(dest) = download::resolve_dest(&prompt.input, &prompt.source) else {
             return;
         };
-        let result = download::download_to(self.backend.as_ref(), &prompt.source, &dest);
+        let source = prompt.source.clone();
         self.download = None;
         // The prompt showed the full destination before Enter, so the confirmation
         // names the file only — it has to fit the narrow browser pane.
@@ -167,10 +175,70 @@ impl BrowserApp {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| dest.display().to_string());
-        self.status = Some(match result {
-            Ok(bytes) => format!("✓ Saved {} ({})", name, download::human_size(bytes)),
-            Err(e) => format!("✗ Download failed: {}", e),
+        let loading = self.start_loading(name.clone(), "Saving…", move |backend, progress| {
+            Done::Status(
+                match download::download_to(backend, &source, &dest, progress) {
+                    Ok(bytes) => format!("✓ Saved {} ({})", name, download::human_size(bytes)),
+                    Err(e) => format!("✗ Download failed: {}", e),
+                },
+            )
         });
+        loading.saves = true;
+    }
+
+    /// Run `job` on a worker behind the progress bar; [`Self::finish_loading`]
+    /// applies what it hands back.
+    pub fn start_loading<F>(
+        &mut self,
+        title: String,
+        finishing: &'static str,
+        job: F,
+    ) -> &mut Loading
+    where
+        F: FnOnce(&dyn FileBrowser, &Progress) -> Done + Send + 'static,
+    {
+        self.status = None; // a failed earlier attempt, say
+        self.loading.insert(Loading::start(
+            title,
+            finishing,
+            Arc::clone(&self.backend),
+            job,
+        ))
+    }
+
+    /// Applies the background job once it lands. Errs only if its worker died
+    /// (see [`Loading::poll`]).
+    pub fn finish_loading(&mut self) -> Result<(), TryRecvError> {
+        let done = match &self.loading {
+            Some(loading) => loading.poll()?,
+            None => None,
+        };
+        let Some(done) = done else {
+            return Ok(());
+        };
+        self.loading = None;
+        let viewer = match done {
+            Done::Table(df, title) => Viewer::DataFrame(Box::new(App::new(df, title, self.theme))),
+            Done::Text(load, title) => Viewer::Text(TextApp::new(load, title, self.theme)),
+            Done::Status(status) => {
+                self.status = Some(status);
+                return Ok(());
+            }
+        };
+        self.viewer = Some(viewer);
+        self.focus = Focus::Viewer;
+        Ok(())
+    }
+
+    /// Blocks until the background job lands and is applied.
+    #[cfg(test)]
+    pub fn wait_for_loading(&mut self) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while self.loading.is_some() {
+            assert!(std::time::Instant::now() < deadline, "job never finished");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            self.finish_loading().unwrap();
+        }
     }
 
     /// Open the find prompt. The listing is unchanged until something is typed.
@@ -446,7 +514,11 @@ mod tests {
         fn list(&self, _prefix: &str) -> Result<Vec<Entry>, BrowserError> {
             Ok(self.entries.clone())
         }
-        fn download_bytes(&self, _path: &str) -> Result<Vec<u8>, BrowserError> {
+        fn download_bytes(
+            &self,
+            _path: &str,
+            _progress: &crate::browser::Progress,
+        ) -> Result<Vec<u8>, BrowserError> {
             Ok(self.bytes.clone())
         }
     }
@@ -514,6 +586,8 @@ mod tests {
         app.download.as_mut().unwrap().input = dest.to_string_lossy().to_string();
         app.confirm_download();
         assert!(app.download.is_none(), "prompt should close after Enter");
+        assert!(app.loading.is_some(), "the fetch runs in the background");
+        app.wait_for_loading();
         assert_eq!(std::fs::read(&dest).unwrap(), b"a,b\n1,2\n");
         let status = app.status.unwrap();
         assert!(status.contains('✓'), "unexpected status: {}", status);

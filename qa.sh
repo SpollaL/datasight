@@ -1089,6 +1089,24 @@ enter 0.6
 assert_contains "X16/second-match-opened" "pretty JSON"
 send "q" 0.20
 
+# X17: a load runs in the background behind a progress bar that owns the keyboard.
+# A FIFO with no writer never finishes opening, so the bar stays up for as long as
+# the case needs it: j must not move the cursor, Esc cancels back to the listing,
+# and q quits mid-load.
+mkdir -p "$QA_TMP/slow" && mkfifo "$QA_TMP/slow/slow.csv"
+start_app "browse $QA_TMP/slow"
+enter 0.40
+assert_contains "X17/bar-shown"         "Loading"
+assert_contains "X17/bar-hint"          "Esc  Cancel"
+send "j" 0.20
+assert_contains "X17/keys-ignored"      "Loading"
+esc
+assert_contains "X17/esc-cancels"       "Navigate to a file"
+assert_contains "X17/browse-keys-back"  "Enter  Open"
+enter 0.40
+send "q" 0.30
+assert_exited "X17/q-quits-mid-load"
+
 # ── Suite Y: Theme picker ─────────────────────────────────────────────────────
 echo ""
 echo "=== Suite Y: Theme picker ==="

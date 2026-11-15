@@ -116,7 +116,7 @@ fn write_all(df: &mut DataFrame, path: &Path) -> std::io::Result<()> {
 
 /// Scratch path next to the destination — same directory, so the rename stays within
 /// one filesystem and cannot fall back to a copy.
-fn scratch_sibling(path: &Path) -> PathBuf {
+pub(crate) fn scratch_sibling(path: &Path) -> PathBuf {
     let mut name = path.as_os_str().to_owned();
     name.push(".tmp");
     PathBuf::from(name)

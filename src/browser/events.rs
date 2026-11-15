@@ -1,11 +1,15 @@
-use crate::app::App;
 use crate::browser::app::{BrowserApp, Focus, Viewer};
+use crate::browser::loading::Done;
 use crate::browser::ui::browser_ui;
-use crate::browser::{load_file_for_browser, EntryKind, FileBrowser};
+use crate::browser::{load_file_for_browser, EntryKind, FileBrowser, Progress};
 use crate::config::MAX_TEXT_BYTES;
 use crate::events::dispatch_viewer_key;
-use crate::text_viewer::{dispatch_text_viewer_key, load_text, TextApp, TextLoadError};
+use crate::text_viewer::{
+    dispatch_text_viewer_key, load_text, parse_text, read_bytes, TextLoad, TextLoadError,
+};
 use crossterm::event::{self, KeyModifiers};
+use polars::prelude::{JsonFormat, JsonReader, SerReader};
+use std::io::Cursor;
 
 pub fn run_browser_app(
     terminal: &mut ratatui::DefaultTerminal,
@@ -13,10 +17,19 @@ pub fn run_browser_app(
     rx: std::sync::mpsc::Receiver<crate::ctl::Request>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     while !app.should_quit {
+        // Also here, not just on an idle tick: a held key never lets `poll` time out.
+        app.finish_loading()?;
         terminal.draw(|frame| browser_ui(frame, &mut app))?;
         // Answer `datasight ctl` while waiting for a key. Every `continue` below comes
         // back through here, so an open prompt cannot starve a request.
         while !event::poll(crate::config::CTL_POLL)? {
+            // While a file loads, redraw every tick so its bar moves, and hold ctl
+            // requests until the new table is in — as when the load blocked here.
+            if app.loading.is_some() {
+                app.finish_loading()?;
+                terminal.draw(|frame| browser_ui(frame, &mut app))?;
+                continue;
+            }
             let table = match app.viewer.as_mut() {
                 Some(Viewer::DataFrame(a)) => Some(&mut **a),
                 _ => None,
@@ -34,6 +47,12 @@ pub fn run_browser_app(
                 continue;
             }
             let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+
+            // A load in progress owns the keyboard: nothing may change the view under it.
+            if app.loading.is_some() {
+                handle_loading_key(&mut app, &key);
+                continue;
+            }
 
             // A pending download owns the keyboard: the destination is free text, so
             // it has to be consumed before any single-key binding sees it.
@@ -142,6 +161,19 @@ pub fn run_browser_app(
     Ok(())
 }
 
+/// Keys while a job runs. Esc cancels it (dropping it stops the download); q quits,
+/// except that a save's first q only warns — quitting throws the download away.
+fn handle_loading_key(app: &mut BrowserApp, key: &event::KeyEvent) {
+    match key.code {
+        event::KeyCode::Esc => app.loading = None,
+        event::KeyCode::Char('q') => match app.loading.as_mut() {
+            Some(loading) if loading.saves && !loading.quit_armed => loading.quit_armed = true,
+            _ => app.should_quit = true,
+        },
+        _ => {}
+    }
+}
+
 fn handle_browser_key(app: &mut BrowserApp, key: &event::KeyEvent) {
     match key.code {
         event::KeyCode::Char('j') | event::KeyCode::Down => app.navigate_down(),
@@ -222,75 +254,64 @@ fn open_or_descend(app: &mut BrowserApp) {
             app.status = Some(format!("Cannot preview {}: binary file", entry.name));
         }
         EntryKind::Data => {
-            let ext = entry.name.rsplit('.').next().unwrap_or("").to_lowercase();
-
-            // Polars happily loads object-rooted JSON as a 1-row all-null
-            // DataFrame instead of erroring, so the Err fall-through alone
-            // can't distinguish tabular from non-tabular .json. Peek the
-            // root byte: only arrays go to the DataFrame viewer; objects
-            // and scalars route directly to the text viewer with pretty
-            // printing. .ndjson/.jsonl skip this check — each line is its
-            // own document.
-            if ext == "json" && peek_json_root(&entry.path, app.backend.as_ref()) != Some(b'[') {
-                open_as_text(app, &entry.path, &entry.name);
-                return;
-            }
-
-            match load_file_for_browser(&entry.path, app.backend.as_ref()) {
-                Ok((df, title)) => {
-                    app.viewer = Some(Viewer::DataFrame(Box::new(App::new(df, title, app.theme))));
-                    app.focus = Focus::Viewer;
-                    app.status = None;
-                }
-                Err(e) => {
-                    // Polars couldn't parse a JSON array (malformed). Fall
-                    // through to text viewer rather than blocking the user.
-                    if ext == "json" {
-                        open_as_text(app, &entry.path, &entry.name);
-                    } else {
-                        app.status = Some(format!("Error loading file: {}", e));
-                    }
-                }
-            }
+            app.start_loading(entry.name.clone(), READING, move |backend, progress| {
+                open_data(&entry.path, &entry.name, backend, progress)
+            });
         }
-        EntryKind::Text => open_as_text(app, &entry.path, &entry.name),
+        EntryKind::Text => {
+            app.start_loading(entry.name.clone(), READING, move |backend, progress| {
+                let load = load_text(&entry.path, backend, progress, MAX_TEXT_BYTES);
+                text_done(load, &entry.path, &entry.name)
+            });
+        }
     }
 }
 
-/// Returns the first non-whitespace byte of the file at `path`, or `None`
-/// if the file can't be read or is whitespace-only. For local paths this
-/// reads at most 4 KiB; for cloud paths it goes through the backend's
-/// `download_bytes` (which currently fetches the whole object).
-fn peek_json_root(path: &str, backend: &dyn FileBrowser) -> Option<u8> {
-    let bytes = if path.starts_with("az://") || path.starts_with("s3://") {
-        backend.download_bytes(path).ok()?
-    } else {
-        use std::io::Read;
-        let mut file = std::fs::File::open(path).ok()?;
-        let mut buf = [0u8; 4096];
-        let n = file.read(&mut buf).ok()?;
-        buf[..n].to_vec()
-    };
-    bytes.iter().copied().find(|b| !b.is_ascii_whitespace())
+const READING: &str = "Reading into memory…";
+
+/// Worker side of opening a data file: a table, or text for JSON that isn't one.
+fn open_data(path: &str, name: &str, backend: &dyn FileBrowser, progress: &Progress) -> Done {
+    if name.to_lowercase().ends_with(".json") {
+        return open_json(path, name, backend, progress);
+    }
+    match load_file_for_browser(path, backend, progress) {
+        Ok((df, title)) => Done::Table(df, title),
+        Err(e) => Done::Status(format!("Error loading file: {}", e)),
+    }
 }
 
-fn open_as_text(app: &mut BrowserApp, path: &str, name: &str) {
-    match load_text(path, app.backend.as_ref(), MAX_TEXT_BYTES) {
-        Ok(load) => {
-            app.viewer = Some(Viewer::Text(TextApp::new(
-                load,
-                path.to_string(),
-                app.theme,
-            )));
-            app.focus = Focus::Viewer;
-            app.status = None;
+/// `.json` is read once — for a cloud object that is the whole download — and its
+/// root decides the viewer: an array opens as a table, anything else as
+/// pretty-printed text. Polars loads an object root as a 1-row all-null frame
+/// instead of erroring, so the parse can't make that call; an array it can't parse
+/// (malformed) falls back to text rather than blocking the user. `.ndjson`/`.jsonl`
+/// never come here — each line is its own document.
+fn open_json(path: &str, name: &str, backend: &dyn FileBrowser, progress: &Progress) -> Done {
+    let bytes = match read_bytes(path, backend, progress) {
+        Ok(bytes) => bytes,
+        Err(e) => return Done::Status(format!("Error loading file: {}", e)),
+    };
+    if bytes.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'[') {
+        // `parse_buf` would do, but it takes the buffer, and the text fallback
+        // still needs it.
+        let table = JsonReader::new(Cursor::new(&bytes))
+            .with_json_format(JsonFormat::Json)
+            .finish();
+        if let Ok(df) = table {
+            return Done::Table(crate::try_parse_date_columns(df), path.to_string());
         }
+    }
+    text_done(parse_text(&bytes, "json", MAX_TEXT_BYTES), path, name)
+}
+
+/// What opening `path` in the text viewer hands back.
+fn text_done(load: Result<TextLoad, TextLoadError>, path: &str, name: &str) -> Done {
+    match load {
+        Ok(load) => Done::Text(load, path.to_string()),
         Err(TextLoadError::Binary) => {
-            app.status = Some(format!("Cannot preview {}: not a text file", name));
+            Done::Status(format!("Cannot preview {}: not a text file", name))
         }
-        Err(TextLoadError::Io(e)) => {
-            app.status = Some(format!("Error loading file: {}", e));
-        }
+        Err(TextLoadError::Io(e)) => Done::Status(format!("Error loading file: {}", e)),
     }
 }
 
@@ -328,6 +349,107 @@ mod tests {
         press(&mut app, event::KeyCode::Backspace, KeyModifiers::NONE);
         press(&mut app, event::KeyCode::Char('X'), KeyModifiers::SHIFT);
         assert_eq!(app.download.expect("prompt still open").input, "sales.csX");
+    }
+
+    #[test]
+    fn opening_a_data_file_loads_in_the_background_then_shows_it() {
+        let app = open_fixture("orders.csv");
+        assert!(matches!(app.viewer, Some(Viewer::DataFrame(_))));
+    }
+
+    #[test]
+    fn opening_a_text_file_loads_in_the_background_then_shows_it() {
+        let app = open_fixture("sample.txt");
+        assert!(matches!(app.viewer, Some(Viewer::Text(_))));
+    }
+
+    /// Serves one body for every download, counting them.
+    struct JsonBackend {
+        body: &'static [u8],
+        downloads: std::sync::atomic::AtomicUsize,
+    }
+
+    impl FileBrowser for JsonBackend {
+        fn list(&self, _prefix: &str) -> Result<Vec<Entry>, BrowserError> {
+            Ok(vec![])
+        }
+        fn download_bytes(&self, _path: &str, _: &Progress) -> Result<Vec<u8>, BrowserError> {
+            self.downloads
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(self.body.to_vec())
+        }
+    }
+
+    #[test]
+    fn a_remote_json_file_downloads_once_whichever_viewer_it_opens_in() {
+        let cases: [(&'static [u8], bool); 3] = [
+            (br#"[{"a": 1}]"#, true),
+            (br#"{"a": 1}"#, false),
+            (br#"[{"a": 1"#, false), // malformed array: text, not an error
+        ];
+        for (body, table) in cases {
+            let backend = JsonBackend {
+                body,
+                downloads: Default::default(),
+            };
+            let done = open_data("az://c/x.json", "x.json", &backend, &Progress::default());
+            let opened = match done {
+                Done::Table(..) => table,
+                Done::Text(..) => !table,
+                Done::Status(s) => panic!("{}", s),
+            };
+            assert!(opened, "wrong viewer for {}", String::from_utf8_lossy(body));
+            let downloads = backend.downloads.into_inner();
+            assert_eq!(downloads, 1, "{}", String::from_utf8_lossy(body));
+        }
+    }
+
+    fn loading_key(app: &mut BrowserApp, code: event::KeyCode) {
+        handle_loading_key(app, &event::KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn q_during_a_download_only_warns_until_pressed_again() {
+        // StubBackend fails every download before anything is written, and the job
+        // is never polled, so `loading` stays up for the whole test.
+        let mut app = app_with_prompt();
+        app.confirm_download();
+        loading_key(&mut app, event::KeyCode::Char('q'));
+        assert!(
+            !app.should_quit,
+            "a stray q must not throw the download away"
+        );
+        assert!(app.loading.as_ref().is_some_and(|l| l.quit_armed));
+        loading_key(&mut app, event::KeyCode::Char('q'));
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn q_during_an_open_quits_at_once() {
+        let mut app = listing();
+        open_or_descend(&mut app);
+        assert!(app.loading.is_some());
+        loading_key(&mut app, event::KeyCode::Char('q'));
+        assert!(app.should_quit, "an open dies with the app anyway");
+    }
+
+    /// Opens `name` from the fixtures listing and waits for its background load.
+    fn open_fixture(name: &str) -> BrowserApp {
+        let mut app = BrowserApp::new(
+            Box::new(crate::browser::local::LocalBackend),
+            "tests/fixtures".to_string(),
+            crate::theme::default_theme(),
+        );
+        app.cursor = app
+            .matches
+            .iter()
+            .position(|m| app.entries[m.index].name == name)
+            .expect("fixture listed");
+        open_or_descend(&mut app);
+        assert!(app.loading.is_some() && app.viewer.is_none());
+        app.wait_for_loading();
+        assert_eq!(app.focus, Focus::Viewer);
+        app
     }
 
     // ── fuzzy find ────────────────────────────────────────────────────────────
