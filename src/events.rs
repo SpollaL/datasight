@@ -439,6 +439,8 @@ fn from_search_to_normal_mode(app: &mut App) {
 fn from_filter_to_normal_mode(app: &mut App) {
     app.mode = Mode::Normal;
     app.filter.query = String::new();
+    // The view was narrowed live while typing; rebuild it without the discarded query.
+    app.update_filter();
 }
 
 fn clear_filters(app: &mut App) {
