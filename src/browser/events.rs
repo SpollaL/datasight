@@ -10,9 +10,21 @@ use crossterm::event::{self, KeyModifiers};
 pub fn run_browser_app(
     terminal: &mut ratatui::DefaultTerminal,
     mut app: BrowserApp,
+    rx: std::sync::mpsc::Receiver<crate::ctl::Request>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     while !app.should_quit {
         terminal.draw(|frame| browser_ui(frame, &mut app))?;
+        // Answer `datasight ctl` while waiting for a key. Every `continue` below comes
+        // back through here, so an open prompt cannot starve a request.
+        while !event::poll(crate::config::CTL_POLL)? {
+            let table = match app.viewer.as_mut() {
+                Some(Viewer::DataFrame(a)) => Some(&mut **a),
+                _ => None,
+            };
+            if crate::ctl::serve(&rx, table) {
+                terminal.draw(|frame| browser_ui(frame, &mut app))?;
+            }
+        }
 
         if let event::Event::Key(key) = event::read()? {
             // Windows terminals report both Press and Release for every key;

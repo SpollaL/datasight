@@ -1134,25 +1134,40 @@ mod chained_filter_tests {
     #[test]
     fn test_duplicate_filter_not_stacked() {
         let mut app = make_app();
-        app.filter.filters = vec![("dept".to_string(), "eng".to_string())];
-        app.update_filter();
+        app.add_filter("dept", "eng").unwrap();
         let height_first = app.view.height();
-
-        // Simulate pressing Enter with the same filter again
-        let col_name = "dept".to_string();
-        let query = "eng".to_string();
-        let already_exists = app
-            .filter
-            .filters
-            .iter()
-            .any(|(c, q)| c == &col_name && q == &query);
-        if !already_exists {
-            app.filter.filters.push((col_name, query));
-            app.update_filter();
-        }
-
+        app.add_filter("dept", "eng").unwrap();
         assert_eq!(app.view.height(), height_first);
         assert_eq!(app.filter.filters.len(), 1);
+    }
+
+    /// A rejected filter must leave the committed ones applied: without the dry run,
+    /// it would make `update_filter` fall back to the unfiltered frame.
+    fn assert_rejected(query: &str, col: &str, expect: &str) {
+        let mut app = make_app();
+        app.add_filter("dept", "= eng").unwrap();
+        let err = app.add_filter(col, query).unwrap_err();
+        assert!(err.contains(expect), "{query:?}: {err}");
+        assert!(!err.contains('\n'), "the bar is one row: {err:?}");
+        assert_eq!(app.filter.filters.len(), 1);
+        assert_eq!(app.view.height(), 2);
+    }
+
+    #[test]
+    fn test_add_filter_rejects_a_number_on_a_text_column() {
+        assert_rejected("= 5", "dept", "cannot compare");
+    }
+
+    #[test]
+    fn test_add_filter_rejects_a_malformed_regex() {
+        assert_rejected("(", "dept", "unclosed group");
+    }
+
+    #[test]
+    fn test_add_filter_rejects_an_incomplete_query() {
+        assert_rejected(">", "sal", "incomplete");
+        assert_rejected("  ", "sal", "incomplete");
+        assert_rejected("> abc", "sal", "requires a number");
     }
 
     #[test]

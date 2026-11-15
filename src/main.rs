@@ -2,6 +2,7 @@ mod app;
 mod browser;
 mod clipboard;
 mod config;
+mod ctl;
 mod events;
 mod export;
 mod text_viewer;
@@ -31,6 +32,10 @@ struct Cli {
     /// Color theme: mocha (default), latte, frappe, macchiato, gruvbox-dark, nord, dracula, solarized-dark, tokyo-night
     #[arg(long, global = true)]
     theme: Option<String>,
+    /// Print a Claude Code skill that teaches an agent `datasight ctl`, then exit.
+    /// Install: datasight --skill > ~/.claude/skills/datasight/SKILL.md
+    #[arg(long)]
+    skill: bool,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -42,6 +47,17 @@ enum Commands {
         /// Root path to browse. Defaults to the current directory.
         /// Use az://container/ for Azure or s3://bucket/ for AWS.
         path: Option<String>,
+    },
+    /// Read and drive a running datasight from another terminal (JSON over a Unix socket)
+    #[command(after_long_help = ctl::HELP)]
+    Ctl {
+        /// One of: state, rows, filter, clear_filters, sort, goto, export
+        method: String,
+        /// The method's parameters as a JSON object, e.g. '{"limit":20}'
+        params: Option<String>,
+        /// Socket of the session to drive. Defaults to $DATASIGHT_SOCKET, else the only one running.
+        #[arg(long)]
+        socket: Option<std::path::PathBuf>,
     },
 }
 
@@ -276,6 +292,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::io::IsTerminal;
     let cli = Cli::parse();
 
+    // Neither draws anything, so a bad DATASIGHT_THEME must not stop them.
+    if cli.skill {
+        print!("{}", include_str!("ctl_skill.md"));
+        return Ok(());
+    }
+    if let Some(Commands::Ctl {
+        method,
+        params,
+        socket,
+    }) = cli.command
+    {
+        std::process::exit(ctl::run_client(&method, params.as_deref(), socket));
+    }
+
     let theme: &'static theme::Theme = {
         let cli_theme = cli.theme.as_deref();
         let env_theme = std::env::var("DATASIGHT_THEME").ok();
@@ -295,8 +325,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("Error: {}", err);
             std::process::exit(1);
         });
-        let browser_app = browser::app::BrowserApp::new(backend, resolved, theme);
-        return ratatui::run(|terminal| browser::events::run_browser_app(terminal, browser_app));
+        let mut browser_app = browser::app::BrowserApp::new(backend, resolved, theme);
+        let (_socket, rx, warning) = open_socket();
+        browser_app.status = warning;
+        return ratatui::run(|terminal| {
+            browser::events::run_browser_app(terminal, browser_app, rx)
+        });
     }
 
     let delimiter = cli
@@ -334,8 +368,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let app = App::new(df, title, theme);
-    ratatui::run(|terminal| run_app(terminal, app))
+    let mut app = App::new(df, title, theme);
+    let (_socket, rx, warning) = open_socket();
+    app.status = warning;
+    ratatui::run(|terminal| run_app(terminal, app, rx))
+}
+
+/// The ctl socket for a TUI that is about to start: the guard to keep alive, the
+/// request channel, and a status-bar warning if it could not open. The TUI works
+/// without it, and only Unix has one to miss.
+fn open_socket() -> (
+    Option<ctl::Socket>,
+    std::sync::mpsc::Receiver<ctl::Request>,
+    Option<String>,
+) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    match ctl::listen(tx) {
+        Ok(socket) => (Some(socket), rx, None),
+        Err(e) => (
+            None,
+            rx,
+            cfg!(unix).then(|| format!(" ✗ ctl socket: {} ", e)),
+        ),
+    }
 }
 
 #[cfg(test)]

@@ -341,11 +341,19 @@ enter 0.15
 assert_contains "D/filter-error" "requires a number"
 esc
 
-# D5: Esc discards filter
+# D5: Esc discards filter. We are on the status col, so "Pending" narrows the view live
+# to Pending rows; only a rebuilt view shows the Completed ones again.
 send "f"
 send "Pending"
 esc
-assert_contains "D/esc-no-filter" "South"
+assert_contains "D/esc-no-filter" "Completed"
+
+# D5b: a malformed regex is an error on one row, not a silent empty view
+send "f"
+send "("
+sleep 0.15
+assert_contains "D/bad-regex" "unclosed group"
+esc
 
 # D6: Fix 4 — filter column is locked when f is pressed, not at Enter time
 # Note: after all prior navigation we're on the status col (string), so "> 0" produces an
@@ -1229,6 +1237,77 @@ enter 0.40
 assert_contains "Z8/binary-status" "Cannot preview"
 # Browser still has focus and no viewer loaded — q quits cleanly.
 send "q" 0.20
+
+# ── Suite CTL: datasight ctl ──────────────────────────────────────────────────
+echo ""
+echo "=== Suite CTL: datasight ctl ==="
+
+ok()  { echo "  PASS [$1]"; PASS=$((PASS + 1)); }
+bad() { echo "  FAIL [$1] — $2"; FAIL=$((FAIL + 1)); FAILURES+=("[$1] $2"); }
+
+# The socket of the datasight in the qa pane, named after its pid. Every call passes it
+# with --socket, so another datasight running on this machine cannot answer instead.
+SOCK=""
+find_socket() {
+  local pid d
+  SOCK=""
+  pid="$(pgrep -P "$(tmux display -p -t "$APP_PANE" '#{pane_pid}')" -x datasight)" || return 1
+  for d in "${XDG_RUNTIME_DIR:-/nonexistent}" "${XDG_CACHE_HOME:-$HOME/.cache}" "$HOME/Library/Caches"; do
+    [ -S "$d/datasight/$pid.sock" ] && SOCK="$d/datasight/$pid.sock" && return 0
+  done
+  return 1
+}
+
+# assert_ctl LABEL EXPECTED ARGS… — run `datasight ctl ARGS…`; pass when it exits 0 and
+# prints EXPECTED. With EXPECTED of the form `!code`, it must exit 1 with that error code.
+assert_ctl() {
+  local label="$1" want="$2" out rc; shift 2
+  out="$("$BINARY" ctl --socket "$SOCK" "$@" 2>&1)"; rc=$?
+  case "$want" in
+    !*) [ "$rc" = 1 ] && printf '%s' "$out" | grep -qF -- "\"code\":\"${want#!}\"" ;;
+    *)  [ "$rc" = 0 ] && printf '%s' "$out" | grep -qF -- "$want" ;;
+  esac && ok "$label" || bad "$label" "expected '$want', got (exit $rc): $out"
+}
+
+start_app "tests/fixtures/orders.csv"
+find_socket && ok "CTL1/socket-exists" || bad "CTL1/socket-exists" "no socket for the qa pane's datasight"
+
+assert_ctl "CTL2/state"        '"total_rows":100' state
+assert_ctl "CTL3/filter"       '"rows":25'        filter '{"column":"region","query":"= North"}'
+sleep 0.15
+assert_contains     "CTL3/pane-says-ctl"   "ctl: filter region = North"
+assert_not_contains "CTL3/pane-filtered"   "South"
+assert_ctl "CTL4/rows"         '"North"'          rows '{"limit":3}'
+assert_ctl "CTL5/sort"         '"direction":"desc"' sort '{"column":"total_amount","direction":"desc"}'
+sleep 0.15
+assert_contains "CTL5/pane-sorted" "▼"
+assert_ctl "CTL6/goto"         '"cursor":{"column":"status","row":5}' goto '{"row":5,"column":"status"}'
+assert_ctl "CTL7/export"       '"rows":25'        export "{\"path\":\"$QA_TMP/ctl.csv\"}"
+assert_file_lines "CTL7/export-lines" "$QA_TMP/ctl.csv" 26
+assert_ctl "CTL8/unknown"      '!unknown_method'  nope
+assert_ctl "CTL9/limit"        '!invalid_params'  rows '{"limit":5000}'
+assert_ctl "CTL10/bad-filter"  '!invalid_filter'  filter '{"column":"region","query":"> 5"}'
+
+# C11: the user is typing a filter, so the agent may read but not change the view.
+send "f"
+send "Sou"
+assert_ctl "CTL11/busy"        '!busy'            clear_filters
+assert_ctl "CTL11/still-reads" '"mode":"Filter"'  state
+esc
+assert_ctl "CTL12/clear"       '"rows":100'       clear_filters
+quit
+sleep 0.2
+[ ! -e "$SOCK" ] && ok "CTL13/socket-removed" || bad "CTL13/socket-removed" "$SOCK left behind after q"
+
+# C14: browse mode answers no_table until a file is open, then drives its table.
+start_app "browse tests/fixtures/"
+find_socket && ok "CTL14/browse-socket" || bad "CTL14/browse-socket" "no socket in browse mode"
+assert_ctl "CTL14/no-table"    '!no_table'        state
+enter 0.45   # opens orders.csv
+assert_ctl "CTL14/table"       '"total_rows":100' state
+send "q" 0.20
+
+"$BINARY" --skill | grep -qx "name: datasight" && ok "CTL15/skill" || bad "CTL15/skill" "--skill has no 'name: datasight' frontmatter"
 
 # ── Summary ────────────────────────────────────────────────────────────────────
 echo ""

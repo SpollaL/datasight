@@ -14,12 +14,24 @@ use crossterm::event;
 pub fn run_app(
     terminal: &mut ratatui::DefaultTerminal,
     mut app: App,
+    rx: std::sync::mpsc::Receiver<crate::ctl::Request>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     while !app.should_quit {
-        terminal.draw(|frame| {
-            let area = frame.area();
-            ui(frame, &mut app, area);
-        })?;
+        let mut draw = |app: &mut App| {
+            terminal
+                .draw(|frame| {
+                    let area = frame.area();
+                    ui(frame, app, area);
+                })
+                .map(drop)
+        };
+        draw(&mut app)?;
+        // Answer `datasight ctl` while waiting for a key.
+        while !event::poll(config::CTL_POLL)? {
+            if crate::ctl::serve(&rx, Some(&mut app)) {
+                draw(&mut app)?;
+            }
+        }
         if let event::Event::Key(key) = event::read()? {
             // Windows terminals report both Press and Release for every key;
             // Unix reports only Press. Without this guard each keystroke would
@@ -409,24 +421,19 @@ fn to_normal_mode_with_filter(app: &mut App) {
     if app.filter.error.is_some() {
         return;
     }
-    app.mode = Mode::Normal;
-    if !app.filter.query.is_empty() {
-        let col = app.filter.col.unwrap_or(0);
-        if let Some(col_name) = app.headers.get(col).cloned() {
-            let already_exists = app
-                .filter
-                .filters
-                .iter()
-                .any(|(c, q)| c == &col_name && q == &app.filter.query);
-            if !already_exists {
-                app.filter
-                    .filters
-                    .push((col_name, app.filter.query.clone()));
-                app.update_filter();
-            }
+    // Taken before `add_filter` so its `update_filter` stops applying the
+    // in-progress copy on top of the committed one.
+    let query = std::mem::take(&mut app.filter.query);
+    let col_name = app.headers.get(app.filter.col.unwrap_or(0)).cloned();
+    if let (false, Some(col_name)) = (query.is_empty(), col_name) {
+        if let Err(e) = app.add_filter(&col_name, &query) {
+            // Stay in the prompt with the reason, as Export does with a blank path.
+            app.filter.query = query;
+            app.filter.error = Some(e);
+            return;
         }
-        app.filter.query = String::new();
     }
+    app.mode = Mode::Normal;
 }
 
 fn from_search_to_normal_mode(app: &mut App) {
@@ -439,6 +446,8 @@ fn from_search_to_normal_mode(app: &mut App) {
 fn from_filter_to_normal_mode(app: &mut App) {
     app.mode = Mode::Normal;
     app.filter.query = String::new();
+    // The view was narrowed live while typing; rebuild it without the discarded query.
+    app.update_filter();
 }
 
 fn clear_filters(app: &mut App) {
@@ -486,16 +495,10 @@ fn apply_unique_value_filter(app: &mut App) {
     if let Some(idx) = app.unique_values.state.selected() {
         if let Some((value, _)) = app.unique_values.filtered.get(idx) {
             let filter = format!("= {}", value);
-            let col = app.unique_values.col;
-            if let Some(col_name) = app.headers.get(col).cloned() {
-                let already_exists = app
-                    .filter
-                    .filters
-                    .iter()
-                    .any(|(c, q)| c == &col_name && q == &filter);
-                if !already_exists {
-                    app.filter.filters.push((col_name, filter));
-                    app.update_filter();
+            if let Some(col_name) = app.headers.get(app.unique_values.col).cloned() {
+                // `filter.error` only renders in Filter mode, so report on the status bar.
+                if let Err(e) = app.add_filter(&col_name, &filter) {
+                    app.status = Some(format!(" ✗ {} ", e));
                 }
             }
         }
