@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Setup
 
-After cloning, activate the pre-commit hooks:
+After cloning, activate the git hooks (`pre-commit`: fmt + clippy; `commit-msg`: Conventional Commits):
 
 ```bash
 git config core.hooksPath .githooks
@@ -28,9 +28,29 @@ vhs demo.tape                                           # regenerate .github/ass
 mdbook serve manual                                     # preview the user manual (deployed to GitHub Pages by docs.yml)
 ```
 
-## Pre-release QA
+## Releases
 
-Before bumping the version or tagging a release, run the full TUI QA suite:
+Releases are automatic — never bump the version or push a tag by hand. On every push to
+main, `ci.yml` runs the tests, clippy, fmt and the TUI QA suite. When all pass and a commit
+since the last tag is a `feat`, `fix`, `perf` or breaking change (`type!:`), its `release`
+job runs `.github/release.sh` (bumps `Cargo.toml` + `Cargo.lock`, writes the CHANGELOG
+section) and pushes a `chore(release): vX.Y.Z` commit and tag to main with the
+`RELEASE_DEPLOY_KEY` deploy key; the tag starts `release.yml` (binaries, GitHub release,
+crates.io). Pre-1.0, `feat` and breaking changes bump the minor version and `fix`/`perf`
+the patch.
+
+main is protected by `.github/ruleset-main.json`, imported by hand under Settings → Rules →
+Rulesets: no direct or force pushes, changes land as squash-merged PRs once the CI jobs are
+green, and only the release deploy key gets past it. Renaming a CI job means updating the
+ruleset's required checks, or every PR waits on a check that never reports.
+
+The changelog is generated from commit subjects — for a squash merge, the PR title — so
+write them as Conventional Commits that read well to a user: `feat` → Added, `fix` → Fixed,
+`perf` → Changed. The `commit-msg` hook and `pr-title.yml` enforce the format. Do not edit
+`CHANGELOG.md` by hand: there is no `[Unreleased]` section, and the release job fails if one
+has entries.
+
+## TUI QA
 
 ```bash
 cargo build && bash qa.sh
@@ -38,9 +58,8 @@ cargo build && bash qa.sh
 
 `qa.sh` creates a tmux session named `qa` (or reuses one if it exists) and drives the binary
 through all 7 modes, every keybinding, all file formats, edge cases (0-row views, wide.csv),
-and the null fixture (`tests/fixtures/orders_nulls.csv`).
-
-A release should only be tagged after `qa.sh` exits 0 **and** `cargo test` passes.
+and the null fixture (`tests/fixtures/orders_nulls.csv`). CI runs it on every PR and push,
+and a release waits for it.
 
 When implementing a new feature that changes keybindings, adds modes, or modifies existing TUI interactions, update `qa.sh` to cover the new behaviour before opening the PR — and update the user manual in `manual/src/` (the feature's chapter and `cheat-sheet.md`). The README is only a pitch that links to the manual; user-facing docs live in the manual.
 

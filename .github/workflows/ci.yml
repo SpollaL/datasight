@@ -53,3 +53,56 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --check
+
+  qa:
+    name: TUI QA
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y tmux
+      - run: cargo build && bash qa.sh
+
+  # Every green push to main whose commits include a feat, fix, perf or breaking
+  # change is released: version bump + changelog (.github/release.sh), a release
+  # commit and tag on main, and the tag push starts release.yml (binaries, GitHub
+  # release, crates.io). The push goes through RELEASE_DEPLOY_KEY, the one actor
+  # .github/ruleset-main.json lets past "changes go through a PR". The release
+  # commit re-runs this workflow once; its release job finds nothing to release.
+  release:
+    name: Release
+    needs: [test, clippy, fmt, qa]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency: release
+    permissions:
+      contents: read
+    steps:
+      # checkout falls back to GITHUB_TOKEN without a key, and a tag pushed with
+      # that token starts no release run, so fail here instead.
+      - name: Require the deploy key
+        env:
+          KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
+        run: test -n "$KEY" || { echo "::error::RELEASE_DEPLOY_KEY secret is not set"; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+      - name: Cut release
+        run: |
+          if [ "$(git ls-remote origin refs/heads/main | cut -f1)" != "$GITHUB_SHA" ]; then
+            echo "main has moved past $GITHUB_SHA; the run for the newer commit releases"
+            exit 0
+          fi
+          version=$(bash .github/release.sh)
+          if [ -z "$version" ]; then
+            echo "No feat, fix, perf or breaking commits since the last tag; nothing to release"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898283+github-actions[bot]@users.noreply.github.com'
+          git commit -am "chore(release): v$version"
+          git tag "v$version"
+          git push --atomic origin HEAD:main "v$version"

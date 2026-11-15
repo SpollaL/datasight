@@ -21,15 +21,21 @@ or behaviour should update its chapter and `cheat-sheet.md`.
 
 ## Before submitting a PR
 
-All three CI checks must pass:
+CI must pass:
 
 ```
 cargo test
 cargo clippy -- -D warnings
 cargo fmt --check
+cargo build && bash qa.sh     # TUI QA suite, needs tmux
 ```
 
 Run `cargo fmt` (no `--check`) to auto-format before committing.
+
+The PR title must be a [Conventional Commit](https://www.conventionalcommits.org/)
+(`feat: …`, `fix(browse): …`). Merging to main releases automatically: `feat` and `fix`
+titles become the changelog entries and pick the version bump. `git config core.hooksPath
+.githooks` checks your commit messages the same way locally.
 
 ## Project structure
 
