@@ -14,12 +14,24 @@ use crossterm::event;
 pub fn run_app(
     terminal: &mut ratatui::DefaultTerminal,
     mut app: App,
+    rx: std::sync::mpsc::Receiver<crate::ctl::Request>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     while !app.should_quit {
-        terminal.draw(|frame| {
-            let area = frame.area();
-            ui(frame, &mut app, area);
-        })?;
+        let mut draw = |app: &mut App| {
+            terminal
+                .draw(|frame| {
+                    let area = frame.area();
+                    ui(frame, app, area);
+                })
+                .map(drop)
+        };
+        draw(&mut app)?;
+        // Answer `datasight ctl` while waiting for a key.
+        while !event::poll(config::CTL_POLL)? {
+            if crate::ctl::serve(&rx, Some(&mut app)) {
+                draw(&mut app)?;
+            }
+        }
         if let event::Event::Key(key) = event::read()? {
             // Windows terminals report both Press and Release for every key;
             // Unix reports only Press. Without this guard each keystroke would

@@ -22,3 +22,7 @@ pub const MAX_TEXT_BYTES: usize = 10 * 1024 * 1024;
 /// `crate::export` special-cases it so the suggested export name stays a legal,
 /// pleasant filename.
 pub const STDIN_LABEL: &str = "<stdin>";
+
+/// How long the event loops wait for a key before answering waiting `datasight ctl`
+/// requests: an idle TUI wakes 20 times a second, and a request waits at most this long.
+pub const CTL_POLL: std::time::Duration = std::time::Duration::from_millis(50);
