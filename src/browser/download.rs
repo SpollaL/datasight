@@ -6,7 +6,7 @@
 //! directory or a `~` means — and [`download_to`] is the only part that touches the
 //! network and the filesystem.
 
-use crate::browser::{is_remote, FileBrowser};
+use crate::browser::{is_remote, FileBrowser, Progress};
 use crate::theme::Theme;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -89,22 +89,36 @@ fn expand_tilde(input: &str) -> PathBuf {
 
 /// Fetch `source` through `backend` and write it to `dest`. Returns the byte count.
 ///
-/// Blocking, and the whole object is buffered in memory before the write — the same
-/// way the viewer already loads a remote file, so a very large object freezes the UI
-/// until it lands.
-pub fn download_to(backend: &dyn FileBrowser, source: &str, dest: &Path) -> Result<u64, String> {
+/// Blocking, so it runs on a [`Loading`](crate::browser::loading::Loading) worker.
+/// The whole object is buffered in memory, then written to a `.tmp` sibling and
+/// renamed into place — so a failed or cancelled fetch writes nothing, and quitting
+/// mid-write leaves at worst a stray `.tmp`, never a cut-off file under `dest`.
+pub fn download_to(
+    backend: &dyn FileBrowser,
+    source: &str,
+    dest: &Path,
+    progress: &Progress,
+) -> Result<u64, String> {
     // `File::create` on a remote URI fails with a bare "No such file or directory",
     // and typing one here is an easy mistake to make while browsing a bucket.
     if dest.to_str().is_some_and(is_remote) {
         return Err("destination must be a local path".to_string());
     }
-    let bytes = backend.download_bytes(source).map_err(|e| e.to_string())?;
+    let bytes = backend
+        .download_bytes(source, progress)
+        .map_err(|e| e.to_string())?;
     // `resolve_dest` accepts a directory that does not exist yet, so make it here —
     // after the fetch, so a download that fails leaves no empty directory behind.
     if let Some(parent) = dest.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    std::fs::write(dest, &bytes).map_err(|e| e.to_string())?;
+    let scratch = crate::export::scratch_sibling(dest);
+    std::fs::write(&scratch, &bytes)
+        .and_then(|()| std::fs::rename(&scratch, dest))
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&scratch);
+            e.to_string()
+        })?;
     Ok(bytes.len() as u64)
 }
 
@@ -289,7 +303,11 @@ mod tests {
         fn list(&self, _prefix: &str) -> Result<Vec<Entry>, BrowserError> {
             Ok(vec![])
         }
-        fn download_bytes(&self, _path: &str) -> Result<Vec<u8>, BrowserError> {
+        fn download_bytes(
+            &self,
+            _path: &str,
+            _progress: &crate::browser::Progress,
+        ) -> Result<Vec<u8>, BrowserError> {
             Ok(self.bytes.clone())
         }
     }
@@ -300,7 +318,11 @@ mod tests {
         fn list(&self, _prefix: &str) -> Result<Vec<Entry>, BrowserError> {
             Ok(vec![])
         }
-        fn download_bytes(&self, _path: &str) -> Result<Vec<u8>, BrowserError> {
+        fn download_bytes(
+            &self,
+            _path: &str,
+            _progress: &crate::browser::Progress,
+        ) -> Result<Vec<u8>, BrowserError> {
             Err(BrowserError::NotFound("no such blob".to_string()))
         }
     }
@@ -312,9 +334,14 @@ mod tests {
         let backend = StubBackend {
             bytes: b"a,b\n1,2\n".to_vec(),
         };
-        let written = download_to(&backend, "az://c/sales.csv", &dest).unwrap();
+        let written =
+            download_to(&backend, "az://c/sales.csv", &dest, &Progress::default()).unwrap();
         assert_eq!(written, 8);
         assert_eq!(std::fs::read(&dest).unwrap(), b"a,b\n1,2\n");
+        assert!(
+            !crate::export::scratch_sibling(&dest).exists(),
+            "staging file left behind"
+        );
     }
 
     #[test]
@@ -326,7 +353,7 @@ mod tests {
         let backend = StubBackend {
             bytes: b"a,b\n".to_vec(),
         };
-        download_to(&backend, "az://c/sales.csv", &dest).unwrap();
+        download_to(&backend, "az://c/sales.csv", &dest, &Progress::default()).unwrap();
         assert_eq!(std::fs::read(&dest).unwrap(), b"a,b\n");
     }
 
@@ -334,7 +361,13 @@ mod tests {
     fn download_to_leaves_no_directory_behind_when_the_fetch_fails() {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("exports").join("sales.csv");
-        download_to(&FailingBackend, "az://c/gone.csv", &dest).unwrap_err();
+        download_to(
+            &FailingBackend,
+            "az://c/gone.csv",
+            &dest,
+            &Progress::default(),
+        )
+        .unwrap_err();
         assert!(
             !dir.path().join("exports").exists(),
             "a failed download should not create the directory"
@@ -345,7 +378,13 @@ mod tests {
     fn download_to_refuses_a_remote_destination() {
         let backend = StubBackend { bytes: vec![] };
         for dest in ["az://c/out.csv", "s3://b/out.csv"] {
-            let err = download_to(&backend, "az://c/sales.csv", Path::new(dest)).unwrap_err();
+            let err = download_to(
+                &backend,
+                "az://c/sales.csv",
+                Path::new(dest),
+                &Progress::default(),
+            )
+            .unwrap_err();
             assert!(err.contains("local path"), "unexpected error: {}", err);
         }
     }
@@ -354,7 +393,13 @@ mod tests {
     fn download_to_reports_a_backend_failure_and_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("sales.csv");
-        let err = download_to(&FailingBackend, "az://c/gone.csv", &dest).unwrap_err();
+        let err = download_to(
+            &FailingBackend,
+            "az://c/gone.csv",
+            &dest,
+            &Progress::default(),
+        )
+        .unwrap_err();
         assert!(err.contains("no such blob"), "unexpected error: {}", err);
         assert!(!dest.exists(), "no file should be created on failure");
     }

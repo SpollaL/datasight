@@ -145,6 +145,10 @@ fn highlight<'a>(name: &str, positions: &[usize], theme: &Theme) -> Line<'a> {
 }
 
 fn render_viewer_pane(frame: &mut Frame, app: &mut BrowserApp, area: Rect, theme: &Theme) {
+    if let Some(loading) = &app.loading {
+        crate::browser::loading::render(frame, loading, area, theme);
+        return;
+    }
     match app.viewer {
         Some(Viewer::DataFrame(ref mut a)) => ui(frame, a, area),
         Some(Viewer::Text(ref mut t)) => render_text_viewer(frame, t, area, theme),
@@ -163,7 +167,9 @@ fn render_viewer_pane(frame: &mut Frame, app: &mut BrowserApp, area: Rect, theme
 }
 
 fn browser_shortcut_bar<'a>(app: &BrowserApp, theme: &Theme) -> Line<'a> {
-    let keys: Vec<(&str, &str)> = if !app.browser_visible {
+    let keys: Vec<(&str, &str)> = if app.loading.is_some() {
+        vec![("Esc", "Cancel"), ("q", "Quit")]
+    } else if !app.browser_visible {
         vec![("ctrl-e", "Show browser")]
     } else if app.focus == Focus::Viewer {
         vec![("tab", "Browser"), ("ctrl-e", "Hide"), ("q", "Quit")]

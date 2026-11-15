@@ -1,4 +1,4 @@
-use crate::browser::FileBrowser;
+use crate::browser::{FileBrowser, Progress};
 use crate::theme::Theme;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -70,16 +70,23 @@ impl std::error::Error for TextLoadError {}
 pub fn load_text(
     path: &str,
     backend: &dyn FileBrowser,
+    progress: &Progress,
     max_bytes: usize,
 ) -> Result<TextLoad, TextLoadError> {
-    let bytes = read_bytes(path, backend).map_err(TextLoadError::Io)?;
+    let bytes = read_bytes(path, backend, progress).map_err(TextLoadError::Io)?;
     let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
     parse_text(&bytes, &ext, max_bytes)
 }
 
-fn read_bytes(path: &str, backend: &dyn FileBrowser) -> Result<Vec<u8>, String> {
+pub(crate) fn read_bytes(
+    path: &str,
+    backend: &dyn FileBrowser,
+    progress: &Progress,
+) -> Result<Vec<u8>, String> {
     if path.starts_with("az://") || path.starts_with("s3://") {
-        backend.download_bytes(path).map_err(|e| e.to_string())
+        backend
+            .download_bytes(path, progress)
+            .map_err(|e| e.to_string())
     } else {
         std::fs::read(path).map_err(|e| e.to_string())
     }
