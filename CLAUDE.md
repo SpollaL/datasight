@@ -63,6 +63,8 @@ Source files under `src/`:
 - **`ui.rs`** — All ratatui rendering. Resolves colors from the active `&'static Theme` (`app.theme`) — no hardcoded palette references. `count_visible_from()` handles horizontal viewport windowing; `ViewportState` tracks `row`/`col` offsets so large files stay fast.
 - **`theme.rs`** — Base16 theme system. Owns 9 built-in `Base16Scheme` constants, the semantic `Theme` struct (slot-based: `bg`, `bg_alt`, `accent`, `error`, `series[6]`, etc.), state file I/O at `~/.config/datasight/state.toml`, and the `resolve_theme(cli, env, state)` precedence function (CLI > env > state file > `mocha`).
 - **`theme_picker.rs`** — `ThemePicker` state (cursor + original theme name) and `render_picker()` popup helper, used by both `App` (plain mode) and `BrowserApp` (browse mode).
+- **`ctl.rs`** — `datasight ctl`: the agent control API. Server side, `listen` binds `<runtime dir>/datasight/<pid>.sock` (0700 dir, 0600 socket) and relays each JSON line to the UI thread over an `mpsc` channel; both event loops poll it every `config::CTL_POLL` through `serve`, which runs requests against the `App` on the UI thread, so there is no locking. `respond` is the pure line-in/line-out core the tests drive. Client side, `run_client` finds the socket (`--socket` > `$DATASIGHT_SOCKET` > the only live one) and prints the reply. `HELP` is the `ctl --help` text; `main.rs::open_socket` binds it just before `ratatui::run`, so a load error never leaves a stale socket.
+- **`ctl_skill.md`** — The Claude Code skill `datasight --skill` prints (`include_str!`). It points agents at `ctl --help` rather than repeating the methods.
 
 ### State sub-structs
 
@@ -110,7 +112,9 @@ Source files under `src/`:
 - `d` is remote-only: `begin_download` refuses local entries and directories with a status message instead of opening the prompt
 - `BrowserApp::find` is checked right after `download` and for the same reason — the query is free text, so `q`, `d` and `T` must reach it as characters. Any future prompt goes in that same block, before the single-key bindings
 - `BrowserApp::cursor` indexes `matches`, **not** `entries`: resolve it through `selected_entry()` / `selected_index()`, never `entries[cursor]`. With no query active `matches` is still every entry, so the two only diverge while filtering
-- Any new viewer mode that accepts typed text must be added to `App::is_typing`, or browse mode swallows `T` from the input to open the theme picker
+- Any new viewer mode that accepts typed text must be added to `App::is_typing`, or browse mode swallows `T` from the input to open the theme picker — and ctl changes the view under the user's cursor instead of answering `busy`
+- `App::add_filter` is the only way a filter gets committed (the `f` prompt, unique values, ctl). It dry-runs the filter on a zero-row frame first, because a filter that fails inside `update_filter` falls back to the unfiltered frame and silently drops *every* filter
+- A new ctl method goes in `ctl::METHODS`, the `dispatch` match and `ctl::HELP`; `every_method_is_documented_and_dispatched` fails if one is missing
 - Azure: `object_store::MicrosoftAzureBuilder::from_env()` ignores `AZURE_STORAGE_CONNECTION_STRING`; `azure.rs` parses it manually. HTTP `BlobEndpoint` values (Azurite) require `with_allow_http(true)`.
 
 ### Browse keybindings

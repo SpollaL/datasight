@@ -128,6 +128,28 @@ the remote name — so `~/Downloads/` saves `sales.csv` as `~/Downloads/sales.cs
 prompt shows the resolved path and warns before overwriting an existing file; `Enter`
 saves, `Esc` cancels. Missing directories in the destination are created for you.
 
+## Agent control
+
+Every running datasight listens on a local socket, so an agent (or a script) in another
+terminal can read the table you are looking at and change it, and you watch it happen:
+
+```bash
+datasight ctl state                                            # columns, filters, cursor
+datasight ctl filter '{"column":"region","query":"= North"}'   # same syntax as `f`
+datasight ctl rows '{"limit":20}'                              # rows as JSON
+```
+
+`datasight ctl --help` lists every method and the filter syntax. To teach Claude Code,
+install the skill once:
+
+```bash
+mkdir -p ~/.claude/skills/datasight && datasight --skill > ~/.claude/skills/datasight/SKILL.md
+```
+
+With one datasight running, `ctl` finds it; with several, pick one with `--socket` (sockets
+are named `<pid>.sock`). Changes are refused with `busy` while you are typing in a prompt.
+Unix only: on Windows datasight runs without the socket.
+
 ## Themes
 
 datasight ships with 9 Base16 color themes:
@@ -192,7 +214,9 @@ Precedence: `--theme` > `DATASIGHT_THEME` > saved state file > `mocha` (default)
 | `Esc` | Discard input |
 
 Supports comparison operators for numeric columns: `> 30`, `< 100`, `>= 0`, `<= 50`, `= 42`, `!= 0`.
-Use `= text` or `!= text` for exact string matching. Plain text falls back to substring search.
+Use `= text` or `!= text` for exact string matching. Plain text is a case-sensitive regex
+match anywhere in the value (`(?i)lap` ignores case); a malformed pattern such as `(` is
+flagged in the prompt.
 
 ### Unique Values
 
@@ -333,7 +357,7 @@ the terminal and autofit again, or use `-` and `+` to size the column by hand.
 
 **Filtering with `>`, `<`, `>=`, `<=` shows an error**
 
-These operators only work on numeric columns. Use `= value` or `!= value` for exact string matching, or plain text for substring search.
+These operators only work on numeric columns. Use `= value` or `!= value` for exact string matching, or plain text for a regex match anywhere in the value.
 
 **The unique values popup shows fewer results than expected**
 
