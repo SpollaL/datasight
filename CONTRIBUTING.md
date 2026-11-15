@@ -13,6 +13,12 @@ cargo build
 cargo run -- <path-to-file.csv>
 ```
 
+## Documentation
+
+The user manual lives in `manual/src/` as Markdown. Preview it with
+[mdBook](https://rust-lang.github.io/mdBook/): `mdbook serve manual`. A change to keys
+or behaviour should update its chapter and `cheat-sheet.md`.
+
 ## Before submitting a PR
 
 All three CI checks must pass:

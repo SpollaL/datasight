@@ -25,6 +25,7 @@ cargo build --features azure                            # include Azure backend
 cargo build --features aws                              # include S3 backend
 cargo install --path . --features azure                 # install with Azure support
 vhs demo.tape                                           # regenerate .github/assets/demo.gif (requires vhs + ttyd)
+mdbook serve manual                                     # preview the user manual (deployed to GitHub Pages by docs.yml)
 ```
 
 ## Pre-release QA
@@ -41,7 +42,7 @@ and the null fixture (`tests/fixtures/orders_nulls.csv`).
 
 A release should only be tagged after `qa.sh` exits 0 **and** `cargo test` passes.
 
-When implementing a new feature that changes keybindings, adds modes, or modifies existing TUI interactions, update `qa.sh` to cover the new behaviour before opening the PR.
+When implementing a new feature that changes keybindings, adds modes, or modifies existing TUI interactions, update `qa.sh` to cover the new behaviour before opening the PR — and update the user manual in `manual/src/` (the feature's chapter and `cheat-sheet.md`). The README is only a pitch that links to the manual; user-facing docs live in the manual.
 
 Start every app in a test with `start_app` (or `launch` for a full shell command such as a
 stdin pipe). Both respawn the pane and poll until the TUI has actually painted — never send
