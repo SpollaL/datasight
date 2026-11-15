@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.0] - 2026-11-15
+
+### Added
+- datasight ctl, a control API for agents (#32)
+- parallel cloud downloads with a progress bar in browse mode (#34)
+
 ## [0.10.1] - 2026-10-16
 
 ### Fixed
