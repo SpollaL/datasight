@@ -2,17 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
-
-### Added
-- `datasight ctl` lets an agent or a script in another terminal read and drive the table you have open. Every session listens on a Unix socket (`<runtime dir>/datasight/<pid>.sock`, in a 0700 directory) that speaks one JSON object per line, modelled on herdr's API. Methods: `state`, `rows`, `filter`, `clear_filters`, `sort`, `goto` and `export`. Changes show up on screen at once, with a `ctl:` note in the status bar, and are refused with `busy` while you are typing in a prompt. Browse mode drives the open table. `ctl` finds the only running session on its own, or takes `--socket`. `datasight ctl --help` documents the methods and the filter syntax, and `datasight --skill` prints a Claude Code skill to install. Unix only; no new dependencies.
-
-### Changed
-- A filter that cannot run is refused at `Enter` with the reason, and you stay in the prompt. It used to be committed and make every filter disappear from the view at once: `= 5` on a text column, or a unique-values pick of a number-like value on a text column (use `^5$` there instead). A malformed regex such as `(` is now an error in the prompt instead of silently matching nothing, and `Enter` on a bare operator such as `>` no longer saves it as a text filter.
-
-### Fixed
-- `Esc` in the filter prompt restores the view. The rows narrowed live while typing stayed filtered after the query was discarded, with no filter listed.
-
 ## [0.10.1] - 2026-10-16
 
 ### Fixed
